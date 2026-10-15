@@ -9,7 +9,7 @@ try {
  const page=await context.newPage();page.setDefaultTimeout(60000);page.setDefaultNavigationTimeout(60000); const errors=[]; const requests=[]; const blocked=new Set();
  page.on('pageerror', e=>errors.push(e.message)); page.on('request', r=>requests.push(r)); page.on('requestfailed', r=>{if(['csp','net::ERR_BLOCKED_BY_CSP'].includes(r.failure()?.errorText))blocked.add(r);});
  async function login(page, path='/demo/login') {
-  await page.goto(base+path);
+  await page.goto(base+path,{waitUntil:'domcontentloaded'});
   await page.locator('input[name="email"]').fill('demo');
   await page.getByLabel('Contraseña',{exact:true}).fill('demo');
   await page.getByRole('button',{name:'Ingresar'}).click();
@@ -33,7 +33,7 @@ try {
  await page.keyboard.press('Escape');
  assert.equal(await page.getByRole('dialog').isVisible(),false);
  assert.equal(await page.getByRole('button',{name:'Ayuda · 3 pasos',exact:true}).evaluate(el=>el===document.activeElement),true);
- await page.goto(base+'/demo/compare?window=7d');
+ await page.goto(base+'/demo/compare?window=7d',{waitUntil:'domcontentloaded'});
  const gap=page.locator('.gap-row').first();
  await gap.locator('summary').focus();await page.keyboard.press('Enter');
  assert.equal(await gap.getAttribute('open'),'');
@@ -42,17 +42,17 @@ try {
  await page.locator('.matrix-cell').first().click();
  assert.ok(page.url().includes('window=7d') && page.url().includes('evidence_source='));
  await page.getByText('Evidencia de', {exact:false}).waitFor();
- await page.goto(base+'/demo/events/1');
+ await page.goto(base+'/demo/events/1',{waitUntil:'domcontentloaded'});
  await page.locator('input[name="reason"]').fill('Decisión privada del navegador de prueba');
  await page.getByRole('button',{name:'Registrar decisión'}).click();
  await page.getByText('follow — Decisión privada del navegador de prueba',{exact:false}).waitFor();
- await other.goto(base+'/demo/events/1');
+ await other.goto(base+'/demo/events/1',{waitUntil:'domcontentloaded'});
  assert.equal(await other.getByText('Decisión privada del navegador de prueba',{exact:false}).count(),0);
  const href=await page.locator('a[href*="/demo/evidence/"]').first().getAttribute('href');
- await page.goto(href);await page.getByText('Contenido sintético de demostración. No es una noticia real.').waitFor();
+ await page.goto(href,{waitUntil:'domcontentloaded'});await page.getByText('Contenido sintético de demostración. No es una noticia real.').waitFor();
  await page.getByRole('button',{name:'Simular novedades'}).click();
  await page.getByText('Se incorporaron 10 publicaciones ficticias', {exact:false}).waitFor();
- await page.goto(base+'/demo/assistant');
+ await page.goto(base+'/demo/assistant',{waitUntil:'domcontentloaded'});
  await page.getByLabel('Tu consulta').fill('transporte');
  await page.getByRole('button',{name:'Consultar →',exact:true}).click();
  await page.locator('#query-result .answer').waitFor();
@@ -61,7 +61,7 @@ try {
  for(const width of [1440,1024,768,390,320]) {
   await page.setViewportSize({width,height:1000});
   for(const path of ['/','/compare','/events','/events/1','/trends','/alerts','/history','/assistant','/integrations','/admin/sources','/admin/config']) {
-   const response=await page.goto(base+'/demo'+path);
+   const response=await page.goto(base+'/demo'+path,{waitUntil:'domcontentloaded'});
    assert.equal(response.status(),200,path);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${path} overflow ${width}`);
    if(path==='/' && width<=760){
@@ -89,7 +89,7 @@ try {
  page.once('dialog', dialog=>dialog.accept());
  await page.getByRole('button',{name:'Reiniciar demo'}).click();
  await page.waitForURL(base+'/demo/');
- await page.goto(base+'/demo/history');
+ await page.goto(base+'/demo/history',{waitUntil:'domcontentloaded'});
  assert.equal(await page.getByText('Decisión privada del navegador de prueba',{exact:false}).count(),0);
  await page.getByRole('button',{name:'Salir',exact:true}).click();
  await page.waitForURL(base+'/demo/login');
