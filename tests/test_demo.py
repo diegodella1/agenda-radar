@@ -220,3 +220,42 @@ def test_demo_templates_and_criteria(demo_app):
         assert client.post("/demo/api/v1/admin/config/publish", json=payload).status_code == 200
         assert client.get("/demo/api/v1/admin/config").json()["config"]["minimum_gap_pp"] == 8
         assert client.get("/demo/api/v1/export/agenda.md").status_code == 200
+
+
+def test_visual_view_filters_evidence_and_momentum(demo_app):
+    with TestClient(demo_app) as client:
+        login(client)
+        complete = client.get("/demo/api/v1/agendas/compare?window=7d").json()
+        row = complete["rows"][0]
+        filtered = client.get(
+            "/demo/api/v1/agendas/compare",
+            params={"window": "7d", "topic": row["topic"], "source": row["source_ids"][0]},
+        ).json()
+        assert filtered["denominator_scope"] == "original_universe"
+        assert filtered["universe_count"] == len(complete["rows"])
+        match = next(r for r in filtered["rows"] if r["event_id"] == row["event_id"])
+        for key in ("reference_share", "own_share", "gap_pp", "priority", "components"):
+            assert match[key] == row[key]
+        assert "window=7d" in match["href"] and "topic=" in match["href"]
+        assert all(d["source_ids"] for d in match["documents"])
+        for topic in filtered["topic_summary"]:
+            assert topic["reference_share"] == pytest.approx(
+                sum(r["reference_share"] for r in filtered["rows"] if r["topic"] == topic["label"])
+            )
+        assert match["confidence_pct"] == round(match["confidence"] * 100)
+        page = client.get("/demo" + match["href"])
+        assert page.status_code == 200 and "Ventana 7d" in page.text
+        assert "probabilidad de veracidad" in page.text
+        empty = client.get("/demo/api/v1/agendas/compare?topic=missing").json()
+        assert empty["rows"] == [] and empty["topic_summary"] == []
+        assert "Sin acontecimientos" in client.get("/demo/?topic=missing").text
+        changes = client.post("/demo/api/v1/demo/news", json={}).json()["affected_events"]
+        assert len(changes) == 2 and all(c["after"] is not None for c in changes)
+        assert any(c["before"] != c["after"] for c in changes)
+
+
+def test_visual_missing_data_is_not_zero(client):
+    result = client.get("/api/v1/agendas/compare").json()
+    assert result["rows"] == []
+    assert result["source_health"]["own"] == "insufficient"
+    assert "Sin acontecimientos" in client.get("/").text

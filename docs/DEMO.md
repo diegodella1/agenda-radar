@@ -50,3 +50,11 @@ y no forman parte del backup SQLite del medio real. No configurar el worker sobr
 novedades idempotentes, reset, permisos, ausencia de tráfico externo/secrets, CSRF, capacidad,
 vencimiento, limpieza y configuración. `scripts/smoke-demo.mjs` recorre la interfaz con dos
 navegadores y tres anchos; usa `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH` y `SMOKE_BASE_URL`.
+
+### Guía visual editorial
+El resumen muestra seis prioridades y permite desplegar el resto. Incluye ritmo de
+publicaciones en intervalos comparables, cobertura propia/referencias, grupos y confianza.
+Las primeras seis historias tienen una publicación previa para contrastar el ritmo actual.
+Las novedades muestran participación de referencia antes/después y enlaces a dos
+acontecimientos afectados. Todos estos datos siguen siendo ficticios.
+Ver [criterio y validación visual](VISUAL_EDITORIAL_PLAN.md).

@@ -133,13 +133,13 @@ def seed(session, now, base_url, reset=False):
         sources.append(source)
     events = []
     for i, (label, topic, age) in enumerate(STORIES):
-        event = Event(label=label, topic=topic, confidence=0.95, first_observed_at=now - age * 3600)
+        event = Event(label=label, topic=topic, confidence=0.95, first_observed_at=now - (max(age, 3) if i < 6 else age) * 3600)
         session.add(event)
         session.flush()
         events.append(event)
         count = 2 if i == 17 else 6 if i < 6 else 5
         for j, source in enumerate(sources[:count]):
-            add_document(session, source, event, now, age + j * 0.005, f"initial-{i}-{j}", base_url)
+            add_document(session, source, event, now, 3 if i < 6 and j == 0 else age + j * 0.005, f"initial-{i}-{j}", base_url)
         if i in (1, 2, 3, 5, 7, 9, 11, 13, 15, 16):
             add_document(session, sources[6], event, now, age, f"own-{i}", base_url)
     session.flush()
@@ -241,15 +241,27 @@ def simulate_news(session, now, base_url):
     emerging = session.get(Event, state.value["emerging_event"])
     if not target or not emerging or target.status == "merged" or emerging.status == "merged":
         raise ValueError("El escenario cambió. Reiniciá la demo para simular este lote.")
+    before = {r["event_id"]: r for r in compare(session, now=now)["rows"]}
     for i, source in enumerate(sources[:6]):
         add_document(session, source, target, now, 0.01, f"news-{i}", base_url)
     for i, source in enumerate(sources[2:6]):
         add_document(session, source, emerging, now, 0.01, f"emerging-{i}", base_url)
     session.flush()
-    count = evaluate_alerts(session, compare(session, now=now))
+    after = compare(session, now=now)
+    count = evaluate_alerts(session, after)
     state.value = {**state.value, "news_applied": True}
     return {
         "already_applied": False,
         "documents_added": min(6, len(sources)) + len(sources[2:6]),
         "alerts_created": count,
+        "affected_events": [
+            {
+                "event_id": r["event_id"],
+                "label": r["label"],
+                "before": before.get(r["event_id"], {}).get("reference_share"),
+                "after": r["reference_share"],
+            }
+            for r in after["rows"]
+            if r["event_id"] in (target.id, emerging.id)
+        ],
     }

@@ -47,6 +47,7 @@ from .models import (
     TrendSample,
     User,
 )
+from .presentation import editorial_view
 from .schemas import (
     DecisionInput,
     DocumentInput,
@@ -358,11 +359,26 @@ def create_app(settings: Settings | None = None):
         return app.openapi()
 
     @app.get("/api/v1/agendas/compare")
-    def agendas(window: str = "24h", user=Depends(require())):
+    def agendas(
+        window: str = "24h",
+        topic: str = "",
+        source: str = "",
+        channel: str = "",
+        geo: str = "",
+        user=Depends(require()),
+    ):
         if window not in WINDOWS:
             raise HTTPException(422, "Ventana inválida")
         with db.session() as session:
-            return compare(session, window, now=settings.demo_epoch)
+            return editorial_view(
+                session,
+                window,
+                now=settings.demo_epoch,
+                topic=topic,
+                source=source,
+                channel=channel,
+                geo=geo,
+            )
 
     @app.get("/api/v1/events")
     def events(
@@ -954,16 +970,16 @@ def create_app(settings: Settings | None = None):
         if window not in WINDOWS:
             window = "24h"
         with db.session() as session:
-            data = compare(session, window, now=settings.demo_epoch)
-            source_list = list(session.scalars(select(Source)))
-        if topic:
-            data["rows"] = [r for r in data["rows"] if r["topic"] == topic]
-        if source.isdigit():
-            data["rows"] = [r for r in data["rows"] if int(source) in r["source_ids"]]
-        if channel:
-            data["rows"] = [r for r in data["rows"] if channel in r["channels"]]
-        if geo:
-            data["rows"] = [r for r in data["rows"] if geo in r["geographies"]]
+            data = editorial_view(
+                session,
+                window,
+                now=settings.demo_epoch,
+                topic=topic,
+                source=source,
+                channel=channel,
+                geo=geo,
+            )
+            source_list = data["sources"]
         return render(
             request,
             "dashboard.html",
@@ -973,7 +989,18 @@ def create_app(settings: Settings | None = None):
         )
 
     @app.get("/events/{event_id}", response_class=HTMLResponse)
-    def event_page(request: Request, event_id: int):
+    def event_page(
+        request: Request,
+        event_id: int,
+        window="24h",
+        topic="",
+        source="",
+        channel="",
+        geo="",
+        evidence_source: int | None = None,
+    ):
+        if window not in WINDOWS:
+            window = "24h"
         with db.session() as session:
             data = event_data(session, event_id)
             data["suggestions"] = [
@@ -981,9 +1008,36 @@ def create_app(settings: Settings | None = None):
                 for state in session.scalars(select(State).where(State.key.like("event_review:%")))
                 if state.value.get("event_id") == event_id
             ]
-            comparison = compare(session, now=settings.demo_epoch)
+            comparison = editorial_view(session, window, now=settings.demo_epoch)
+            context = editorial_view(
+                session,
+                window,
+                now=settings.demo_epoch,
+                topic=topic,
+                source=source,
+                channel=channel,
+                geo=geo,
+            )
             score = next((r for r in comparison["rows"] if r["event_id"] == event_id), None)
-        return render(request, "event.html", event=data, score=score, title="Acontecimiento")
+        # Keep historical evidence available, but distinguish the selected scoring window.
+        visible_ids = {d["id"] for d in score["documents"]} if score else set()
+        data["evidence_source"] = next(
+            (s["name"] for s in comparison["sources"] if s["id"] == evidence_source), None
+        )
+        if evidence_source is not None:
+            visible_ids = (
+                {d["id"] for d in score["documents"] if evidence_source in d["source_ids"]}
+                if score
+                else set()
+            )
+        data["current_documents"] = sorted(
+            [d for d in data["documents"] if d["id"] in visible_ids],
+            key=lambda d: d["published_at"] or d["observed_at"],
+        )
+        data["past_documents"] = [d for d in data["documents"] if d["id"] not in visible_ids]
+        return render(
+            request, "event.html", event=data, score=score, data=context, title="Acontecimiento"
+        )
 
     @app.get("/assistant", response_class=HTMLResponse)
     def assistant_page(request: Request, user=Depends(require("editor"))):

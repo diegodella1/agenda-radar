@@ -64,7 +64,7 @@ document.addEventListener('click',async event=>{
   button.disabled=true;
   try {
     if(button.dataset.action==='demo-reset'){if(!confirm('¿Reiniciar tu escenario? Se borrarán únicamente tus cambios de esta demo.'))return;await api('/api/v1/demo/reset',{});location.href=appUrl('/');}
-    else if(button.dataset.action==='demo-news'){const result=await api('/api/v1/demo/news',{});const message=result.already_applied?'Este lote ya fue aplicado. Reiniciá la demo para repetirlo.':`Se incorporaron ${result.documents_added} publicaciones ficticias y se generaron ${result.alerts_created} alertas. El radar está actualizado.`;sessionStorage.setItem('radar-demo-notice',message);location.reload();}
+    else if(button.dataset.action==='demo-news'){const result=await api('/api/v1/demo/news',{});const message=result.already_applied?'Este lote ya fue aplicado. Reiniciá la demo para repetirlo.':`Se incorporaron ${result.documents_added} publicaciones ficticias y se generaron ${result.alerts_created} alertas. El radar está actualizado.`;sessionStorage.setItem('radar-demo-notice',message);sessionStorage.setItem('radar-demo-changes',JSON.stringify(result.affected_events || []));location.reload();}
     else if (button.dataset.post) {const result=await api(button.dataset.post,{});if(result.job_id)displayResult(await jobResult(result.job_id));else location.reload();}
     else if(button.dataset.action==='logout'){await api('/api/v1/auth/logout',{});location.href=appUrl('/login');}
     else if(button.dataset.action==='pair'){const result=await api('/api/v1/telegram/pair',{});notice(`Enviá al bot este comando dentro de 10 minutos: ${result.command}`);}
@@ -86,3 +86,35 @@ document.querySelector('[data-readiness]')?.addEventListener('click', async () =
 });
 
 if(basePath==='/demo' && sessionStorage.getItem('radar-demo-notice')){notice(sessionStorage.getItem('radar-demo-notice'));sessionStorage.removeItem('radar-demo-notice');}
+
+const helpDialog = document.querySelector('#editorial-help');
+const helpSteps = [
+  ['Detectar una señal', 'Elegí un período. Las tarjetas priorizan acontecimientos según tus fuentes y criterios editoriales; las barras comparan atención propia y de referencia.'],
+  ['Entender y contrastar', 'Abrí Entender diferencia o una fila del gráfico. Contrastá medios, grupos independientes y publicaciones originales. Una brecha no demuestra que un tema esté escalando.'],
+  ['Decidir y observar cambios', 'Desde Ver evidencia registrá Seguir, Revisar, Descartar o Aceptar y explicá el motivo. En demo, Simular novedades agrega publicaciones ficticias y enlaza los acontecimientos afectados.']
+];
+let helpStep = 0;
+function renderHelp() {
+  document.querySelector('#help-step').textContent = `Paso ${helpStep + 1} de 3`;
+  document.querySelector('#help-title').textContent = helpSteps[helpStep][0];
+  document.querySelector('#help-copy').textContent = helpSteps[helpStep][1];
+  document.querySelector('[data-help-next]').textContent = helpStep === 2 ? 'Terminar' : 'Siguiente →';
+}
+for (const button of document.querySelectorAll('[data-help]')) button.addEventListener('click', () => {helpStep=0;renderHelp();helpDialog.showModal();});
+document.querySelector('[data-help-close]')?.addEventListener('click', () => helpDialog.close());
+document.querySelector('[data-help-next]')?.addEventListener('click', () => {if(helpStep===2)helpDialog.close();else{helpStep++;renderHelp();}});
+document.addEventListener('keydown', event => {
+  if(event.key !== 'Escape') return;
+  const detail = document.activeElement?.closest('details[open]');
+  if(detail){detail.open=false;detail.querySelector('summary').focus();}
+});
+
+if(basePath==='/demo' && sessionStorage.getItem('radar-demo-changes')) {
+  try {
+    const changes=JSON.parse(sessionStorage.getItem('radar-demo-changes'));
+    const list=document.createElement('div');list.className='news-links';
+    for(const change of changes){const link=document.createElement('a');link.href=appUrl(`/events/${Number(change.event_id)}?window=24h`);const percent=value=>value==null?'Sin datos':`${Number(value).toFixed(1)}%`;link.textContent=`${change.label}: referencias ${percent(change.before)} → ${percent(change.after)} · Ver evidencia`;list.append(link);}
+    document.querySelector('#notice')?.append(list);
+  } catch { /* An expired browser notice must not prevent normal navigation. */ }
+  sessionStorage.removeItem('radar-demo-changes');
+}
