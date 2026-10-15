@@ -78,10 +78,12 @@ try {
    if(path==='/'){
     await page.evaluate(()=>document.fonts.ready);
     assert.equal(await page.evaluate(()=>document.fonts.check('16px "Radar Sans"')),true);
-    await page.screenshot({path:`artifacts/screenshots/demo-${width}.png`,fullPage:true});
-    await page.screenshot({path:`artifacts/screenshots/workspace-${width}.png`,fullPage:false});
+    if(process.env.SMOKE_SCREENSHOTS!=='0'){
+     await page.screenshot({path:`artifacts/screenshots/demo-${width}.png`,fullPage:true});
+     await page.screenshot({path:`artifacts/screenshots/workspace-${width}.png`,fullPage:false});
+    }
    }
-   if(['/compare','/events/1','/admin/sources'].includes(path) && [1440,390].includes(width))await page.screenshot({path:`artifacts/screenshots/workspace-${path.replaceAll('/','-')}-${width}.png`,fullPage:false});
+   if(process.env.SMOKE_SCREENSHOTS!=='0' && ['/compare','/events/1','/admin/sources'].includes(path) && [1440,390].includes(width))await page.screenshot({path:`artifacts/screenshots/workspace-${path.replaceAll('/','-')}-${width}.png`,fullPage:false});
   }
  }
  page.once('dialog', dialog=>dialog.accept());
