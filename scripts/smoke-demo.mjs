@@ -17,6 +17,7 @@ try {
   await page.getByRole('heading',{name:'Radar editorial'}).waitFor();
  }
  await login(page, '/login');
+ await page.waitForFunction(()=>getComputedStyle(document.body).fontFamily.includes('Radar Sans') && [...document.fonts].some(f=>f.family==='Radar Sans' && f.status==='loaded'),null,{timeout:15000});
  await page.locator('select[name="window"]').selectOption('7d');
  await page.locator('.filter-more > summary').click();
  await page.locator('select[name="channel"]').selectOption('web');
@@ -76,7 +77,7 @@ try {
     assert.equal(await page.getByRole('navigation',{name:'Principal',exact:true}).isVisible(),false);
    }
    if(path==='/'){
-    await page.evaluate(()=>document.fonts.ready);
+    await page.waitForFunction(()=>document.fonts.status==='loaded' && [...document.fonts].some(f=>f.family==='Radar Sans' && f.status==='loaded'),null,{timeout:15000});
     assert.equal(await page.evaluate(()=>document.fonts.check('16px "Radar Sans"')),true);
     if(process.env.SMOKE_SCREENSHOTS!=='0'){
      await page.screenshot({path:`artifacts/screenshots/demo-${width}.png`,fullPage:true});

@@ -60,3 +60,8 @@ se interrumpió tras aproximadamente cinco minutos sin resultado final. No se de
 aprobado ese recorrido remoto. Las capturas locales y el recorrido local en cinco
 tamaños sí fueron revisados. El script admite SMOKE_SCREENSHOTS=0 para separar
 la comprobación funcional de las capturas en equipos con recursos limitados.
+
+### Corrección posterior de CSS
+La auditoría encontró app.css sobrescrito con una plantilla durante el último ajuste.
+Se restauró y se incorporaron pruebas de contenido y estilos calculados. El sitio público
+no estaba afectado. Ver [causa, corrección y cobertura](CSS_AUDIT.md).
