@@ -90,3 +90,10 @@ Cinco páginas públicas con diseño editorial, alcance explícito, casos de uso
 - La primera prueba HTTPS detectó JavaScript antiguo servido desde caché. Se añadió
   versión por hash de contenido a CSS/JS, también en la demo y las páginas públicas.
   GitHub CI aprobó la implementación inicial; se verifica nuevamente la corrección.
+
+- Recorrido HTTPS funcional completado tras versionar assets: ambos accesos, aislamiento,
+  decisiones, evidencia, novedades, asistente, 11 pantallas en 3 tamaños, reset y logout.
+  El chequeo de red identificó el beacon inyectado por Cloudflare, bloqueado por CSP antes
+  de conectarse; el smoke distingue explícitamente ese bloqueo de tráfico externo real.
+- CI de GitHub aprobada para el código desplegado. Ningún usuario demo ni documento
+  ficticio quedó en la base de producción.

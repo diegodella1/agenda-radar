@@ -6,8 +6,8 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.CH
 const contexts=[];
 try {
  const context=await browser.newContext({viewport:{width:1440,height:1000}});contexts.push(context);
- const page=await context.newPage();page.setDefaultTimeout(60000);page.setDefaultNavigationTimeout(60000); const errors=[]; const requests=[];
- page.on('pageerror', e=>errors.push(e.message)); page.on('request', r=>requests.push(r.url()));
+ const page=await context.newPage();page.setDefaultTimeout(60000);page.setDefaultNavigationTimeout(60000); const errors=[]; const requests=[]; const blocked=new Set();
+ page.on('pageerror', e=>errors.push(e.message)); page.on('request', r=>requests.push(r)); page.on('requestfailed', r=>{if(['csp','net::ERR_BLOCKED_BY_CSP'].includes(r.failure()?.errorText))blocked.add(r);});
  async function login(page, path='/demo/login') {
   await page.goto(base+path);
   await page.locator('input[name="email"]').fill('demo');
@@ -52,7 +52,8 @@ try {
  await page.getByRole('button',{name:'Salir',exact:true}).click();
  await page.waitForURL(base+'/demo/login');
  assert.deepEqual(errors,[]);
- assert.equal(requests.filter(url=>!url.startsWith(base+'/')).length,0,'External browser requests');
+ // Cloudflare injects its beacon at the edge; CSP blocks it before network access.
+ assert.equal(requests.filter(r=>!r.url().startsWith(base+'/') && !(new URL(r.url()).hostname==='static.cloudflareinsights.com' && blocked.has(r))).length,0,'Unexpected external browser requests');
  console.log('Demo smoke passed: login demo/demo, two visitors, decision isolation, evidence, news, assistant, 11 screens at 3 widths, reset and logout.');
 } finally {
  for(const context of contexts){
