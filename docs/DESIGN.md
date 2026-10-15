@@ -65,3 +65,7 @@ la comprobación funcional de las capturas en equipos con recursos limitados.
 La auditoría encontró app.css sobrescrito con una plantilla durante el último ajuste.
 Se restauró y se incorporaron pruebas de contenido y estilos calculados. El sitio público
 no estaba afectado. Ver [causa, corrección y cobertura](CSS_AUDIT.md).
+
+### Criterios y pesos
+El editor usa controles visuales, divulgación progresiva y comparación real antes/después.
+JSON queda como diagnóstico de solo lectura. Ver [recorrido y límites](CRITERIA_EDITOR.md).

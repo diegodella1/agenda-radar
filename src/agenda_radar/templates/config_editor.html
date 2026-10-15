@@ -1,0 +1,23 @@
+<p class="lede">Elegí qué importa para tu medio y comprobá cómo cambia el radar.</p>
+<form data-config class="criteria-editor" data-global="{{ 'true' if user.role == 'superadmin' else 'false' }}">
+  <script type="application/json" id="criteria-sources">{{ config_sources|tojson }}</script>
+  <div class="criteria-overview panel">
+    <p class="eyebrow">Versión activa #{{ version }} · Borrador de trabajo</p>
+    <ol class="criteria-steps"><li><strong>1</strong> Ajustá criterios</li><li><strong>2</strong> Compará el efecto</li><li><strong>3</strong> Publicá</li></ol>
+    <p>Los pesos editoriales modifican la afinidad. Los pesos de fuentes modifican la agenda de referencia. No necesitan sumar 100.</p>
+    <details><summary>Qué cambia y qué permanece fijo</summary><p>La prioridad combina brecha (35%), afinidad (25%), velocidad (20%) y diversidad (20%). Esta fórmula permanece fija. Un multiplicador 0 elimina esa afinidad, pero no oculta por sí solo el acontecimiento. Los cambios en palabras clave se aplican a nuevas clasificaciones.</p><p>Google Trends aporta señales separadas. Los pesos de referencia no convierten búsquedas ni conversación en cobertura periodística.</p></details>
+  </div>
+  <div id="criteria-controls"></div>
+  <section class="panel criteria-save" aria-label="Revisar y publicar">
+    <p id="criteria-state" role="status">Sin cambios pendientes.</p>
+    <div class="criteria-actions"><button type="button" data-action="preview-config">Comparar con versión activa</button><button type="button" class="quiet" id="criteria-reset">Descartar borrador</button></div>
+    <section id="preview-result" tabindex="-1" aria-label="Resultado de la comparación" hidden></section>
+    <label>Motivo del cambio<input name="reason" minlength="3" required placeholder="Ej.: priorizar la cobertura local esta semana"></label>
+    <p class="muted">Publicar activa estos criterios para el equipo. La comparación usa las últimas 24 horas y no envía alertas ni consume IA.</p>
+    <button type="submit" id="criteria-publish" disabled>Publicar versión</button>
+  </section>
+  <details class="panel"><summary>Ver configuración técnica · solo lectura</summary><p>Representación del borrador para diagnóstico. Editá los controles de arriba.</p><label>Configuración JSON<textarea name="config" rows="12" class="code" readonly>{{ config_json }}</textarea></label></details>
+  <noscript><p class="caveat">Activá JavaScript para usar el editor visual de criterios.</p></noscript>
+</form>
+<details class="panel"><summary>Historial de versiones · {{ rows|length }}</summary>{% for row in rows %}<article class="version"><span>#{{ row.id }} · {{ row.at|date }} · {{ row.reason }}</span><button class="quiet" data-post="{{ base_path }}/api/v1/admin/config/{{ row.id }}/rollback">Restaurar esta versión</button></article>{% endfor %}</details>
+<script src="{{ base_path }}/static/config-editor.js?v={{ asset_version }}" defer></script>

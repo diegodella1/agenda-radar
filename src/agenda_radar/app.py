@@ -69,7 +69,7 @@ from .security import (
 )
 
 ROOT = Path(__file__).parent
-ASSET_VERSION = digest("".join((ROOT / "static" / name).read_text() for name in ("app.js", "app.css", "public.css")))[:12]
+ASSET_VERSION = digest("".join((ROOT / "static" / name).read_text() for name in ("app.js", "app.css", "public.css", "config-editor.js")))[:12]
 
 
 def row_dict(row, exclude=()):
@@ -1108,6 +1108,11 @@ def create_app(settings: Settings | None = None):
                     select(model).order_by(model.__table__.c.id.desc()).limit(100)
                 )
             ]
+            config_sources = [
+                {"id": source.id, "name": source.name, "weight": source.weight,
+                 "scope": source.scope}
+                for source in session.scalars(select(Source).order_by(Source.name))
+            ] if section == "config" else []
             providers = list(session.scalars(select(Secret.name)))
             incidents = (
                 [
@@ -1126,6 +1131,7 @@ def create_app(settings: Settings | None = None):
             rows=rows,
             config=config.model_dump(),
             config_json=json.dumps(config.model_dump(), ensure_ascii=False, indent=2),
+            config_sources=config_sources,
             version=version,
             providers=providers,
             incidents=incidents,

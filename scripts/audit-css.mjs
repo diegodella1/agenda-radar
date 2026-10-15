@@ -25,7 +25,7 @@ async function inspect(path){
    await page.setViewportSize({width,height:900});
    const metrics=await page.evaluate(()=>{
     const h=document.querySelector('h1');
-    return {overflow:document.documentElement.scrollWidth>innerWidth,font:getComputedStyle(document.body).fontFamily,headingFont:h?getComputedStyle(h).fontFamily:null,background:getComputedStyle(document.body).backgroundColor,sheets:[...document.styleSheets].map(s=>s.href),inputs:[...document.querySelectorAll('input:not([type=hidden]),select')].filter(e=>e.getClientRects().length).map(e=>({name:e.name,height:e.getBoundingClientRect().height})),nav:document.querySelector('.workspace-nav')?getComputedStyle(document.querySelector('.workspace-nav')).display:null};
+    return {overflow:document.documentElement.scrollWidth>innerWidth,font:getComputedStyle(document.body).fontFamily,headingFont:h?getComputedStyle(h).fontFamily:null,background:getComputedStyle(document.body).backgroundColor,sheets:[...document.styleSheets].map(s=>s.href),inputs:[...document.querySelectorAll('input:not([type=hidden]):not([type=checkbox]),select')].filter(e=>e.getClientRects().length).map(e=>({name:e.name,height:e.getBoundingClientRect().height})),nav:document.querySelector('.workspace-nav')?getComputedStyle(document.querySelector('.workspace-nav')).display:null};
    });
    assert.equal(metrics.overflow,false,`Document overflow ${width}`);
    assert.match(metrics.font,/Radar Sans/);
