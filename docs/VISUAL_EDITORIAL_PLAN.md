@@ -9,8 +9,9 @@ No se infiere escalada a partir de una brecha ni se inventan tendencias sin hist
 ## Criterio de diseño
 Aproximadamente 90% de comprensión mediante señales, gráficos y acciones visibles.
 Período, unidades, fuentes, disponibilidad y estado permanecen visibles. Explicaciones en
-desplegables, paneles y ayuda opcional. Papel editorial, tinta verde, terracota; Georgia y
-Trebuchet locales, ritmo de 8 px. Ancla: mapa numerado de prioridades con barras de atención.
+desplegables, paneles y ayuda opcional. La dirección visual vigente es un panel de software con Fira Sans local, navegación azul
+noche, controles compactos y tarjetas de señales. Ver DESIGN.md; reemplaza la estética
+anterior de papel y tipografía serif. El principio de guía visual se conserva.
 DFII: impacto 4 + adecuación 5 + viabilidad 5 + rendimiento 5 − riesgo 4 = 15.
 
 ## Implementación

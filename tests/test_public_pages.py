@@ -16,4 +16,4 @@ def test_public_pages_do_not_expose_editorial_data(app):
 
 def test_signed_in_root_keeps_editorial_dashboard(client):
     assert "Radar editorial" in client.get("/").text
-    assert "La noticia está." in client.get("/home").text
+    assert "Tus fuentes." in client.get("/home").text

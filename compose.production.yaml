@@ -1,6 +1,6 @@
 name: agenda-radar
 x-runtime: &runtime
-  image: agenda-radar:visual-e70e080ebad2
+  image: agenda-radar:workspace-2c3577b131ca
   user: "1000:1000"
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]

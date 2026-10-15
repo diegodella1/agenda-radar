@@ -118,3 +118,17 @@ if(basePath==='/demo' && sessionStorage.getItem('radar-demo-changes')) {
   } catch { /* An expired browser notice must not prevent normal navigation. */ }
   sessionStorage.removeItem('radar-demo-changes');
 }
+
+// Inline mobile navigation keeps the content reachable without an overlay or focus trap.
+document.documentElement.classList.add('js');
+const navToggle=document.querySelector('[data-nav-toggle]');
+const workspaceNav=document.querySelector('#workspace-nav');
+function setNavigation(open){
+  workspaceNav?.classList.toggle('is-open',open);
+  navToggle?.setAttribute('aria-expanded',String(open));
+  navToggle?.setAttribute('aria-label',open?'Cerrar navegación':'Abrir navegación');
+}
+navToggle?.addEventListener('click',()=>setNavigation(navToggle.getAttribute('aria-expanded')!=='true'));
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape' && workspaceNav?.classList.contains('is-open') && !helpDialog?.open){setNavigation(false);navToggle.focus();}
+});

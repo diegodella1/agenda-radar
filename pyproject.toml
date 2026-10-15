@@ -32,4 +32,4 @@ check_untyped_defs = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-agenda_radar = ["templates/*.html", "static/*", "migrations/*.py", "migrations/versions/*.py"]
+agenda_radar = ["templates/*.html", "static/*", "static/fonts/*", "migrations/*.py", "migrations/versions/*.py"]

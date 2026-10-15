@@ -17,6 +17,13 @@ try {
   await page.getByRole('heading',{name:'Radar editorial'}).waitFor();
  }
  await login(page, '/login');
+ await page.locator('select[name="window"]').selectOption('7d');
+ await page.locator('.filter-more > summary').click();
+ await page.locator('select[name="channel"]').selectOption('web');
+ await page.getByRole('button',{name:'Aplicar',exact:true}).click();
+ await page.waitForURL(url=>url.searchParams.get('window')==='7d' && url.searchParams.get('channel')==='web');
+ await page.locator('.active-filters').getByText('Canal: web',{exact:true}).waitFor();
+
  const second=await browser.newContext();contexts.push(second);
  const other=await second.newPage();other.setDefaultTimeout(60000);await login(other);
  await page.getByRole('button',{name:'Ayuda · 3 pasos',exact:true}).click();
@@ -51,13 +58,30 @@ try {
  await page.locator('#query-result .answer').waitFor();
  assert.ok(await page.locator('#query-result a').count()>0);
  await mkdir('artifacts/screenshots',{recursive:true});
- for(const width of [1440,390,320]) {
+ for(const width of [1440,1024,768,390,320]) {
   await page.setViewportSize({width,height:1000});
   for(const path of ['/','/compare','/events','/events/1','/trends','/alerts','/history','/assistant','/integrations','/admin/sources','/admin/config']) {
    const response=await page.goto(base+'/demo'+path);
    assert.equal(response.status(),200,path);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${path} overflow ${width}`);
-   if(path==='/')await page.screenshot({path:`artifacts/screenshots/demo-${width}.png`,fullPage:true});
+   if(path==='/' && width<=760){
+    const toggle=page.locator('[data-nav-toggle]');
+    await toggle.click();
+    await page.getByRole('navigation',{name:'Principal',exact:true}).waitFor({state:'visible'});
+    assert.equal(await toggle.getAttribute('aria-expanded'),'true');
+    await page.getByRole('navigation',{name:'Principal',exact:true}).getByRole('link',{name:'Agenda comparada',exact:true}).focus();
+    await page.keyboard.press('Escape');
+    assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+    assert.equal(await toggle.evaluate(el=>document.activeElement===el),true);
+    assert.equal(await page.getByRole('navigation',{name:'Principal',exact:true}).isVisible(),false);
+   }
+   if(path==='/'){
+    await page.evaluate(()=>document.fonts.ready);
+    assert.equal(await page.evaluate(()=>document.fonts.check('16px "Radar Sans"')),true);
+    await page.screenshot({path:`artifacts/screenshots/demo-${width}.png`,fullPage:true});
+    await page.screenshot({path:`artifacts/screenshots/workspace-${width}.png`,fullPage:false});
+   }
+   if(['/compare','/events/1','/admin/sources'].includes(path) && [1440,390].includes(width))await page.screenshot({path:`artifacts/screenshots/workspace-${path.replaceAll('/','-')}-${width}.png`,fullPage:false});
   }
  }
  page.once('dialog', dialog=>dialog.accept());
@@ -70,7 +94,7 @@ try {
  assert.deepEqual(errors,[]);
  // Cloudflare injects its beacon at the edge; CSP blocks it before network access.
  assert.equal(requests.filter(r=>!r.url().startsWith(base+'/') && !(new URL(r.url()).hostname==='static.cloudflareinsights.com' && blocked.has(r))).length,0,'Unexpected external browser requests');
- console.log('Demo smoke passed: login demo/demo, two visitors, decision isolation, evidence, news, assistant, 11 screens at 3 widths, reset and logout.');
+ console.log('Demo smoke passed: login demo/demo, two visitors, decision isolation, evidence, news, assistant, 11 screens at 5 widths, mobile navigation and focus, reset and logout.');
 } finally {
  for(const context of contexts){
   for(const page of context.pages().slice(0,1)){
