@@ -43,3 +43,8 @@ incluyendo persistencia exacta del borrador y descarte. Ruff y sintaxis JavaScri
 verificados. La auditoría general completó 118 comprobaciones; el último menú móvil
 de Auditoría venció por tiempo bajo carga del host. No se reporta esa corrida como
 una auditoría completa aprobada.
+
+Publicación: imagen agenda-radar:criteria-e84af9b52084 en mp.diegodella.ar.
+El mismo smoke del editor pasó sobre HTTPS, incluyendo publicación y lectura de la
+configuración en una visita demo temporal. Los criterios reales no se modificaron.
+CI aprobó lint, tipos, sintaxis JavaScript, 49 pruebas y construcción del paquete.

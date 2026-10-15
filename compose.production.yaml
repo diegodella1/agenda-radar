@@ -1,6 +1,6 @@
 name: agenda-radar
 x-runtime: &runtime
-  image: agenda-radar:cssfix-b5421e4389e6
+  image: agenda-radar:criteria-e84af9b52084
   user: "1000:1000"
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]
