@@ -1,0 +1,71 @@
+name: agenda-radar
+x-runtime: &runtime
+  image: agenda-radar:public-pages
+  user: "1000:1000"
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+  volumes:
+    - ./data:/app/data
+    - ./secrets/master.key:/app/secrets/master.key:ro
+    - ./data/backups:/app/backups
+  environment: &env
+    DATA_DIR: /app/data
+    SECRETS_DIR: /app/secrets
+    BACKUP_DIR: /app/backups
+    APP_BASE_URL: https://mp.diegodella.ar
+    COOKIE_SECURE: "true"
+    APP_BIND: 127.0.0.1
+    APP_PORT: 8765
+services:
+  web:
+    <<: *runtime
+    network_mode: host
+    command: ["python", "-m", "agenda_radar.cli", "web"]
+    mem_limit: 512m
+    cpus: 0.75
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health/ready',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  worker:
+    <<: *runtime
+    command: ["python", "-m", "agenda_radar.cli", "worker"]
+    mem_limit: 768m
+    cpus: 0.75
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.0
+    user: "1000:1000"
+    network_mode: host
+    restart: unless-stopped
+    command: ["--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "tunnel", "run"]
+    volumes:
+      - ./deploy/cloudflared-isolated.yml:/etc/cloudflared/config.yml:ro
+      - ./secrets/cloudflared.json:/etc/cloudflared/credentials.json:ro
+    mem_limit: 192m
+    cpus: 0.25
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  soak:
+    profiles: ["qa"]
+    image: agenda-radar:pilot-762a80ce0e77
+    user: "1000:1000"
+    command: ["python", "/soak.py", "--hours", "24", "--output", "/results"]
+    restart: "no"
+    mem_limit: 96m
+    cpus: 0.1
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    volumes:
+      - ./scripts/soak.py:/soak.py:ro
+      - ./artifacts/soak:/results
+    logging:
+      driver: json-file
+      options: {max-size: "2m", max-file: "2"}

@@ -1,0 +1,24 @@
+[Unit]
+Description=Agenda Radar worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=diego
+WorkingDirectory=/home/diego/Documents/mediaparty/agenda-radar
+EnvironmentFile=/home/diego/Documents/mediaparty/agenda-radar/.env
+ExecStart=/home/diego/Documents/mediaparty/agenda-radar/.venv/bin/python -m agenda_radar.cli worker
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/diego/Documents/mediaparty/agenda-radar/data /home/diego/Documents/mediaparty/agenda-radar/secrets
+MemoryMax=768M
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

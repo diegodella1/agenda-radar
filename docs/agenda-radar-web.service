@@ -1,0 +1,18 @@
+[Unit]
+Description=Agenda Radar web
+After=network.target
+[Service]
+Type=simple
+User=radar
+WorkingDirectory=/opt/agenda-radar
+EnvironmentFile=/opt/agenda-radar/.env
+ExecStart=/opt/agenda-radar/.venv/bin/python -m agenda_radar.cli web
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/agenda-radar/data /opt/agenda-radar/secrets
+MemoryMax=512M
+[Install]
+WantedBy=multi-user.target

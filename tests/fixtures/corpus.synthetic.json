@@ -1,0 +1,62 @@
+[
+  {
+    "url": "https://uno.example.test/presupuesto",
+    "title": "Congreso aprueba presupuesto nacional para educación",
+    "expected_cluster": "presupuesto"
+  },
+  {
+    "url": "https://dos.example.test/presupuesto",
+    "title": "Congreso aprueba presupuesto nacional para educación",
+    "expected_cluster": "presupuesto"
+  },
+  {
+    "url": "https://tres.example.test/presupuesto",
+    "title": "Congreso aprueba presupuesto nacional para educación",
+    "expected_cluster": "presupuesto"
+  },
+  {
+    "url": "https://uno.example.test/plaza",
+    "title": "Municipio inaugura nueva plaza barrial en San Martín",
+    "expected_cluster": "plaza"
+  },
+  {
+    "url": "https://dos.example.test/plaza",
+    "title": "Municipio inaugura nueva plaza barrial en San Martín",
+    "expected_cluster": "plaza"
+  },
+  {
+    "url": "https://tres.example.test/plaza",
+    "title": "Municipio inaugura nueva plaza barrial en San Martín",
+    "expected_cluster": "plaza"
+  },
+  {
+    "url": "https://uno.example.test/incendio",
+    "title": "Bomberos controlan incendio en depósito industrial de Rosario",
+    "expected_cluster": "incendio"
+  },
+  {
+    "url": "https://dos.example.test/incendio",
+    "title": "Bomberos controlan incendio en depósito industrial de Rosario",
+    "expected_cluster": "incendio"
+  },
+  {
+    "url": "https://tres.example.test/incendio",
+    "title": "Bomberos controlan incendio en depósito industrial de Rosario",
+    "expected_cluster": "incendio"
+  },
+  {
+    "url": "https://uno.example.test/elecciones",
+    "title": "San Martín elige autoridades del club deportivo local",
+    "expected_cluster": "elecciones"
+  },
+  {
+    "url": "https://dos.example.test/elecciones",
+    "title": "San Martín elige autoridades del club deportivo local",
+    "expected_cluster": "elecciones"
+  },
+  {
+    "url": "https://tres.example.test/elecciones",
+    "title": "San Martín elige autoridades del club deportivo local",
+    "expected_cluster": "elecciones"
+  }
+]

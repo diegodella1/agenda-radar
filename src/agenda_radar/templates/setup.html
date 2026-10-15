@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Configurar · Agenda Radar</title><link rel="stylesheet" href="/static/app.css"><script src="/static/app.js" defer></script></head>
+<body class="login"><main><p class="eyebrow">◉ AGENDA RADAR</p><h1>Tu mesa editorial,<br>lista para empezar.</h1><p>Creá la cuenta administradora. Necesitás el código de instalación generado en el servidor.</p>
+<form data-endpoint="/api/v1/auth/setup" data-setup>
+<label>Código de instalación<input name="code" type="password" autocomplete="off" required minlength="20" maxlength="100"></label>
+<label>Correo<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+<label>Contraseña<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+<button>Crear administrador →</button></form><div id="notice" role="status" hidden></div>
+<p class="muted">El código vence en 24 horas y solo permite crear la primera cuenta. Después podrás cargar fuentes, invitar al equipo y configurar integraciones.</p><a href="/login">Ya tengo cuenta</a></main></body></html>

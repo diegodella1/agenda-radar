@@ -1,0 +1,49 @@
+services:
+  web:
+    build: .
+    image: agenda-radar:local
+    command: ["python", "-m", "agenda_radar.cli", "web"]
+    environment: &environment
+      DATA_DIR: /app/data
+      SECRETS_DIR: /app/secrets
+      BACKUP_DIR: /app/backups
+      APP_BIND: 0.0.0.0
+      APP_PORT: 8765
+      APP_BASE_URL: ${APP_BASE_URL:-https://mp.diegodella.ar}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    ports:
+      - "127.0.0.1:${APP_PORT:-8765}:8765"
+    volumes: &volumes
+      - radar-data:/app/data
+      - radar-secrets:/app/secrets
+      - radar-backups:/app/backups
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health/live',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  worker:
+    image: agenda-radar:local
+    command: ["python", "-m", "agenda_radar.cli", "worker"]
+    environment: *environment
+    volumes: *volumes
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+volumes:
+  radar-data:
+  radar-secrets:
+  radar-backups:

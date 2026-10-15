@@ -1,0 +1,4 @@
+# Dependencies are built from PyPI by the main Dockerfile; this layer freezes final application code.
+ARG RUNTIME_IMAGE=agenda-radar:0.1.0
+FROM ${RUNTIME_IMAGE}
+COPY src /app/src

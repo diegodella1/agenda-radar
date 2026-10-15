@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agenda-radar"
+version = "0.1.0"
+description = "Agenda editorial trazable, self-hosted"
+requires-python = ">=3.12"
+dependencies = [
+ "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "pydantic-settings>=2.6,<3",
+ "sqlalchemy>=2.0,<3", "alembic>=1.14,<2", "jinja2>=3.1.5,<4",
+ "httpx>=0.28,<1", "feedparser>=6,<7", "beautifulsoup4>=4.12,<5",
+ "cryptography>=46,<51", "python-multipart>=0.0.20",
+ "openai>=2,<4"
+]
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.9", "mypy>=1.14"]
+[project.scripts]
+agenda-radar = "agenda_radar.cli:main"
+[tool.ruff]
+line-length = 100
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+[tool.mypy]
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agenda_radar = ["templates/*.html", "static/*", "migrations/*.py", "migrations/versions/*.py"]
