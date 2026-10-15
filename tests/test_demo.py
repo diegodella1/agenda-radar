@@ -193,7 +193,7 @@ def test_demo_csrf_cookies_expiry_capacity_and_cleanup(demo_app):
 
 def test_demo_templates_and_criteria(demo_app):
     with TestClient(demo_app) as client:
-        assert "demo" in client.get("/demo/login").text
+        assert "/demo/static/app.js?v=" in client.get("/demo/login").text
         assert client.get("/demo/").url.path == "/demo/login"
         login(client)
         for path in (

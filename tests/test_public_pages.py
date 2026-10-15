@@ -9,6 +9,7 @@ def test_public_pages_do_not_expose_editorial_data(app):
             assert 'href="/login"' in response.text
             assert "admin@example.test" not in response.text
             assert 'name="description"' in response.text
+            assert "/static/public.css?v=" in response.text
         assert visitor.get("/api/v1/events").status_code == 401
         assert visitor.get("/compare", follow_redirects=False).status_code == 303
 

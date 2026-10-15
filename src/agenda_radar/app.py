@@ -68,6 +68,7 @@ from .security import (
 )
 
 ROOT = Path(__file__).parent
+ASSET_VERSION = digest("".join((ROOT / "static" / name).read_text() for name in ("app.js", "app.css", "public.css")))[:12]
 
 
 def row_dict(row, exclude=()):
@@ -135,7 +136,7 @@ def create_app(settings: Settings | None = None):
     app.state.db, app.state.settings, app.state.vault = db, settings, vault
     app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
     templates = Jinja2Templates(directory=ROOT / "templates")
-    templates.env.globals.update(base_path=base_path, demo=settings.demo_mode, demo_enabled=settings.demo_enabled)
+    templates.env.globals.update(base_path=base_path, demo=settings.demo_mode, demo_enabled=settings.demo_enabled, asset_version=ASSET_VERSION)
     templates.env.filters["date"] = lambda value: (
         datetime.fromtimestamp(value, ZoneInfo(settings.app_timezone)).strftime("%d/%m %H:%M")
         if value

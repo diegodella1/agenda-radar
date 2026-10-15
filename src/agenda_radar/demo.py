@@ -36,6 +36,8 @@ class Visit:
 
 class DemoManager:
     def __init__(self, settings):
+        from .app import ASSET_VERSION
+
         self.settings = settings
         self.root = settings.demo_dir.resolve()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -44,7 +46,7 @@ class DemoManager:
         self.cleaner = None
         self.login_attempts: list[float] = []
         self.templates = Jinja2Templates(directory=ROOT / "templates")
-        self.templates.env.globals.update(base_path="/demo", demo=True, demo_enabled=True)
+        self.templates.env.globals.update(base_path="/demo", demo=True, demo_enabled=True, asset_version=ASSET_VERSION)
         self.static = StaticFiles(directory=ROOT / "static")
 
     async def start(self):

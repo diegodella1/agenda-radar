@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es-AR"><head><meta charset="utf-8"><meta name="app-base" content="{{ base_path }}"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Configurar · Agenda Radar</title><link rel="stylesheet" href="{{ base_path }}/static/app.css"><script src="{{ base_path }}/static/app.js" defer></script></head>
+<html lang="es-AR"><head><meta charset="utf-8"><meta name="app-base" content="{{ base_path }}"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Configurar · Agenda Radar</title><link rel="stylesheet" href="{{ base_path }}/static/app.css?v={{ asset_version }}"><script src="{{ base_path }}/static/app.js?v={{ asset_version }}" defer></script></head>
 <body class="login"><main><p class="eyebrow">◉ AGENDA RADAR</p><h1>Tu mesa editorial,<br>lista para empezar.</h1><p>Creá la cuenta administradora. Necesitás el código de instalación generado en el servidor.</p>
 <form data-endpoint="{{ base_path }}/api/v1/auth/setup" data-setup>
 <label>Código de instalación<input name="code" type="password" autocomplete="off" required minlength="20" maxlength="100"></label>

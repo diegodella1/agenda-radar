@@ -86,3 +86,7 @@ Cinco páginas públicas con diseño editorial, alcance explícito, casos de uso
 - El primer smoke local agotó el timeout de carga durante pruebas concurrentes;
   el recorrido completo posterior pasó con timeout de 60 s y ejecución separada.
 - Plan y operación en docs/DEMO_PLAN.md y docs/DEMO.md.
+
+- La primera prueba HTTPS detectó JavaScript antiguo servido desde caché. Se añadió
+  versión por hash de contenido a CSS/JS, también en la demo y las páginas públicas.
+  GitHub CI aprobó la implementación inicial; se verifica nuevamente la corrección.
