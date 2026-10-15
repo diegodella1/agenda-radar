@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     openai_monthly_budget_usd: float = 20
     backup_dir: Path = Path("data/backups")
 
+    demo_enabled: bool = False
+    demo_mode: bool = False
+    demo_epoch: float | None = None
+    demo_dir: Path = Path("data/demo")
+    demo_max_sessions: int = 10
+    demo_session_seconds: int = 7200
+
     @property
     def database_path(self) -> Path:
         return self.data_dir / "agenda.db"

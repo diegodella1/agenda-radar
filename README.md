@@ -135,3 +135,7 @@ y pasó la suite completa; versiones en requirements.production.txt.
 ## Sitio público
 
 Portada `/home`, acerca de `/about`, producto `/funcionalidades`, casos `/casos-de-uso` y alcance `/roadmap`. La raíz muestra el radar si hay sesión y la portada para visitantes. Sin precios. Ver [sitio público](docs/PUBLIC_SITE.md) y [especificaciones originales](docs/specification/00_LEEME.md).
+
+## Demo pública
+
+[Probar demo](https://mp.diegodella.ar/demo/login): usuario `demo`, contraseña `demo`. Escenario ficticio editable y aislado por visitante. Ver [operación y límites](docs/DEMO.md) y [plan aprobado](docs/DEMO_PLAN.md).

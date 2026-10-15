@@ -21,3 +21,6 @@ Variables: `SMOKE_BASE_URL`, `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH`.
 Repositorio: https://github.com/diegodella1/agenda-radar (privado).
 Especificaciones y plan originales: `docs/specification/`.
 Credenciales, bases, copias y artefactos quedan fuera de Git.
+
+Con DEMO_ENABLED activo, la portada enlaza a /demo/login. Las credenciales demo/demo
+crean un escenario privado temporal, sin habilitar registro de cuentas reales.

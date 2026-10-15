@@ -1,11 +1,13 @@
 'use strict';
+const basePath = document.querySelector('meta[name="app-base"]')?.content || '';
+const appUrl = path => basePath && !path.startsWith(basePath + '/') ? basePath + path : path;
 const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
 function notice(message, error = false) {
   const node = document.querySelector('#notice');
   node.hidden = false; node.textContent = message; node.className = error ? 'notice error' : 'notice';
 }
 async function api(path, body, method = 'POST') {
-  const response = await fetch(path, {method, credentials:'same-origin', headers:{
+  const response = await fetch(appUrl(path), {method, credentials:'same-origin', headers:{
     'Content-Type':'application/json', 'X-Requested-With':'AgendaRadar', 'X-CSRF-Token':csrf()},
     ...(body === undefined ? {} : {body:JSON.stringify(body)})});
   const result = await response.json();
@@ -49,9 +51,10 @@ document.addEventListener('submit', async event=>{
     let data=payload(form), endpoint=form.dataset.endpoint;
     if (form.hasAttribute('data-config')) {data={config:JSON.parse(data.config),reason:data.reason};endpoint='/api/v1/admin/config/publish';}
     if (form.dataset.dynamicSource) {endpoint=`/api/v1/admin/sources/${data.source_id}/${form.dataset.dynamicSource}`;delete data.source_id;}
+    if(form.hasAttribute('data-login') && data.email==='demo' && !basePath) endpoint='/demo/api/v1/auth/login';
     const result=await api(endpoint,data,form.dataset.method||'POST');
-    if (form.hasAttribute('data-setup')) {location.href='/login';return;}
-    if (form.hasAttribute('data-login')) {location.href='/';return;}
+    if (form.hasAttribute('data-setup')) {location.href=appUrl('/login');return;}
+    if (form.hasAttribute('data-login')) {location.href=result.redirect || (data.email==='demo' ? '/demo/' : appUrl('/'));return;}
     if (result.job_id) {displayResult(await jobResult(result.job_id));notice('Consulta completada.');}
     else {notice('Guardado.');location.reload();}
   } catch(error) {notice(error.message,true);} finally {if (button) button.disabled=false;}
@@ -60,8 +63,10 @@ document.addEventListener('click',async event=>{
   const button=event.target.closest('[data-action],[data-post]');if (!button) return;
   button.disabled=true;
   try {
-    if (button.dataset.post) {const result=await api(button.dataset.post,{});if(result.job_id)displayResult(await jobResult(result.job_id));else location.reload();}
-    else if(button.dataset.action==='logout'){await api('/api/v1/auth/logout',{});location.href='/login';}
+    if(button.dataset.action==='demo-reset'){if(!confirm('¿Reiniciar tu escenario? Se borrarán únicamente tus cambios de esta demo.'))return;await api('/api/v1/demo/reset',{});location.href=appUrl('/');}
+    else if(button.dataset.action==='demo-news'){const result=await api('/api/v1/demo/news',{});const message=result.already_applied?'Este lote ya fue aplicado. Reiniciá la demo para repetirlo.':`Se incorporaron ${result.documents_added} publicaciones ficticias y se generaron ${result.alerts_created} alertas. El radar está actualizado.`;sessionStorage.setItem('radar-demo-notice',message);location.reload();}
+    else if (button.dataset.post) {const result=await api(button.dataset.post,{});if(result.job_id)displayResult(await jobResult(result.job_id));else location.reload();}
+    else if(button.dataset.action==='logout'){await api('/api/v1/auth/logout',{});location.href=appUrl('/login');}
     else if(button.dataset.action==='pair'){const result=await api('/api/v1/telegram/pair',{});notice(`Enviá al bot este comando dentro de 10 minutos: ${result.command}`);}
     else if(button.dataset.action==='test-source'){const data=payload(document.querySelector('#source-form'));const result=await api('/api/v1/admin/sources/test',data);displayResult(await jobResult(result.job_id));}
     else if(button.dataset.action==='preview-config'){const data=payload(button.closest('form'));const result=await api('/api/v1/admin/config/preview',{config:JSON.parse(data.config),reason:data.reason||'Previsualización'});const target=document.querySelector('#preview-result');target.hidden=false;target.textContent=JSON.stringify(result,null,2);notice('Previsualización calculada. La configuración activa no cambió.');}
@@ -79,3 +84,5 @@ document.querySelector('[data-readiness]')?.addEventListener('click', async () =
   try {displayResult(await api('/api/v1/admin/readiness',undefined,'GET'), '#readiness-result');}
   catch(error) {notice(error.message,true);}
 });
+
+if(basePath==='/demo' && sessionStorage.getItem('radar-demo-notice')){notice(sessionStorage.getItem('radar-demo-notice'));sessionStorage.removeItem('radar-demo-notice');}

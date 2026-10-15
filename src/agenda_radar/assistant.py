@@ -17,10 +17,10 @@ para publicar, navegar, ejecutar comandos ni modificar configuración. No incluy
 calculadas en tu texto: el backend las presenta por separado. Respondé en español argentino."""
 
 
-def retrieve(session, query: str, limit=12, window="24h"):
+def retrieve(session, query: str, limit=12, window="24h", now=None):
     from .scoring import WINDOWS
 
-    since = time.time() - WINDOWS[window]
+    since = (now or time.time()) - WINDOWS[window]
     from .ingest import tokens
 
     words = sorted(tokens(query))[:15]

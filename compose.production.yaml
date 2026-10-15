@@ -1,6 +1,6 @@
 name: agenda-radar
 x-runtime: &runtime
-  image: agenda-radar:public-pages
+  image: agenda-radar:demo-1ec297c32918
   user: "1000:1000"
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]
@@ -20,6 +20,10 @@ x-runtime: &runtime
     COOKIE_SECURE: "true"
     APP_BIND: 127.0.0.1
     APP_PORT: 8765
+    DEMO_ENABLED: ${DEMO_ENABLED:-true}
+    DEMO_DIR: /app/data/demo
+    DEMO_MAX_SESSIONS: 10
+    DEMO_SESSION_SECONDS: 7200
 services:
   web:
     <<: *runtime

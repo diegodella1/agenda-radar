@@ -127,12 +127,15 @@ class PromptInput(BaseModel):
 def create_app(settings: Settings | None = None):
     settings = settings or Settings()
     db, vault = Database(settings.database_path), Vault(settings.secrets_dir)
+    base_path = "/demo" if settings.demo_mode else ""
+    session_cookie = "radar_demo_session" if settings.demo_mode else "radar_session"
     app = FastAPI(
         title="Agenda Radar", version="0.1.0", docs_url=None, redoc_url=None, openapi_url=None
     )
     app.state.db, app.state.settings, app.state.vault = db, settings, vault
     app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
     templates = Jinja2Templates(directory=ROOT / "templates")
+    templates.env.globals.update(base_path=base_path, demo=settings.demo_mode, demo_enabled=settings.demo_enabled)
     templates.env.filters["date"] = lambda value: (
         datetime.fromtimestamp(value, ZoneInfo(settings.app_timezone)).strftime("%d/%m %H:%M")
         if value
@@ -166,7 +169,10 @@ def create_app(settings: Settings | None = None):
                 target += "?" + request.url.query
             return RedirectResponse(target, status_code=307)
         request.state.user, request.state.csrf = None, ""
-        token = request.cookies.get("radar_session")
+        demo_dispatch = settings.demo_enabled and (request.url.path == "/demo" or request.url.path.startswith("/demo/"))
+        token = None if demo_dispatch else request.cookies.get(session_cookie)
+        if settings.demo_mode and request.url.path == "/api/v1/auth/login":
+            token = None
         if (
             request.headers.get("content-length", "0").isdigit()
             and int(request.headers.get("content-length", "0")) > 300000
@@ -179,7 +185,7 @@ def create_app(settings: Settings | None = None):
                     user = session.get(User, login.user_id)
                     if user and user.enabled:
                         request.state.user, request.state.csrf = user, login.csrf
-        if request.method not in ("GET", "HEAD", "OPTIONS"):
+        if not demo_dispatch and request.method not in ("GET", "HEAD", "OPTIONS"):
             if request.headers.get("x-requested-with") != "AgendaRadar":
                 return JSONResponse({"detail": "Solicitud inválida (CSRF)"}, status_code=403)
             if request.state.user and not secrets.compare_digest(
@@ -189,6 +195,22 @@ def create_app(settings: Settings | None = None):
             origin = request.headers.get("origin")
             if origin and origin != str(request.base_url).rstrip("/"):
                 return JSONResponse({"detail": "Origen no permitido"}, status_code=403)
+        if settings.demo_mode:
+            path = request.url.path
+            permitted = (
+                path in {"/", "/login", "/compare", "/events", "/trends", "/alerts", "/history",
+                         "/assistant", "/integrations", "/admin/sources", "/admin/config",
+                         "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/me",
+                         "/api/v1/agendas/compare", "/api/v1/events", "/api/v1/alerts",
+                         "/api/v1/trends", "/api/v1/assistant/query", "/api/v1/export/agenda.md",
+                         "/api/v1/editorial/decisions", "/api/v1/editorial/coverage"}
+                or path.startswith(("/static/", "/events/", "/evidence/", "/api/v1/events/",
+                                    "/api/v1/jobs/", "/api/v1/demo/"))
+                or re.fullmatch(r"/api/v1/admin/sources(?:/(?:test|export\.csv|[0-9]+(?:/poll)?))?", path)
+                or re.fullmatch(r"/api/v1/admin/config(?:/(?:preview|publish|[0-9]+/rollback))?", path)
+            )
+            if not permitted:
+                return JSONResponse({"detail": "Esta función no está habilitada en la demo."}, 403)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -257,7 +279,7 @@ def create_app(settings: Settings | None = None):
     def setup_page(request: Request):
         with db.session() as session:
             if session.scalar(select(User.id).limit(1)):
-                return RedirectResponse("/login", status_code=303)
+                return RedirectResponse(base_path + "/login", status_code=303)
         return templates.TemplateResponse(request=request, name="setup.html", context={})
 
     @app.post("/api/v1/auth/setup")
@@ -270,6 +292,8 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/api/v1/auth/login")
     def login(payload: LoginInput, request: Request):
+        if settings.demo_enabled and payload.email == "demo" and payload.password == "demo":
+            return {"redirect": "/demo/login"}
         now = time.time()
         limiter_key = "login:" + digest(
             (request.client.host if request.client else "local") + ":" + payload.email.lower()
@@ -305,8 +329,9 @@ def create_app(settings: Settings | None = None):
             raise HTTPException(401, "Credenciales inválidas")
         response = JSONResponse({"csrf": csrf, "role": user.role})
         response.set_cookie(
-            "radar_session",
+            session_cookie,
             token,
+            path=base_path or "/",
             httponly=True,
             secure=settings.cookie_secure,
             samesite="strict",
@@ -317,10 +342,10 @@ def create_app(settings: Settings | None = None):
     @app.post("/api/v1/auth/logout")
     def logout(request: Request, user=Depends(require())):
         with db.session() as session:
-            login = session.get(LoginSession, digest(request.cookies["radar_session"]))
+            login = session.get(LoginSession, digest(request.cookies[session_cookie]))
             session.delete(login)
         response = JSONResponse({"ok": True})
-        response.delete_cookie("radar_session")
+        response.delete_cookie(session_cookie, path=base_path or "/")
         return response
 
     @app.get("/api/v1/auth/me")
@@ -336,7 +361,7 @@ def create_app(settings: Settings | None = None):
         if window not in WINDOWS:
             raise HTTPException(422, "Ventana inválida")
         with db.session() as session:
-            return compare(session, window)
+            return compare(session, window, now=settings.demo_epoch)
 
     @app.get("/api/v1/events")
     def events(
@@ -352,7 +377,7 @@ def create_app(settings: Settings | None = None):
         if window not in WINDOWS or sort not in ("priority", "gap", "reference_share"):
             raise HTTPException(422, "Filtro inválido")
         with db.session() as session:
-            result = compare(session, window)
+            result = compare(session, window, now=settings.demo_epoch)
         rows = [
             row
             for row in result["rows"]
@@ -429,6 +454,8 @@ def create_app(settings: Settings | None = None):
 
         if payload.published_at > time.time() + 300 or payload.published_at <= 0:
             raise ValueError("Fecha de publicación inválida")
+        if settings.demo_mode and settings.demo_epoch is not None:
+            payload = payload.model_copy(update={"published_at": min(payload.published_at, settings.demo_epoch)})
         with db.session() as session:
             if not session.get(Event, payload.event_id):
                 raise HTTPException(404, "Acontecimiento inexistente")
@@ -450,6 +477,8 @@ def create_app(settings: Settings | None = None):
     @app.post("/api/v1/admin/sources")
     def add_source(payload: SourceInput, user=Depends(require("media_admin"))):
         with db.session() as session:
+            if settings.demo_mode and len(list(session.scalars(select(Source.id)))) >= 30:
+                raise HTTPException(429, "Máximo de 30 fuentes en la demo")
             source = Source(**payload.model_dump())
             session.add(source)
             session.flush()
@@ -521,6 +550,9 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/api/v1/admin/sources/test")
     def test_source(payload: SourceInput, user=Depends(require("media_admin"))):
+        if settings.demo_mode:
+            return demo_job({"mode": "simulated", "message": "Prueba simulada: no se consultó la URL.",
+                             "source": payload.name}, user.id)
         return {
             "job_id": enqueue(
                 db, "test_source", payload.model_dump(), secrets.token_hex(16), user.id
@@ -529,6 +561,11 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/api/v1/admin/sources/{source_id}/poll")
     def force_poll(source_id: int, user=Depends(require("media_admin"))):
+        if settings.demo_mode:
+            with db.session() as session:
+                if not session.get(Source, source_id):
+                    raise HTTPException(404, "Fuente inexistente")
+            return demo_job({"mode": "simulated", "message": "Sin conexión externa. Usá Simular novedades para incorporar el lote de ejemplo."}, user.id)
         with db.session() as session:
             if not session.get(Source, source_id):
                 raise HTTPException(404, "Fuente inexistente")
@@ -602,7 +639,7 @@ def create_app(settings: Settings | None = None):
                     value={"hash": fingerprint, "version": version, "at": time.time()},
                 )
             )
-            return {"before": compare(session), "after": compare(session, config=payload.config)}
+            return {"before": compare(session, now=settings.demo_epoch), "after": compare(session, config=payload.config, now=settings.demo_epoch)}
 
     @app.post("/api/v1/admin/config/publish")
     def publish(payload: ConfigInput, user=Depends(require("media_admin"))):
@@ -694,6 +731,11 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/api/v1/assistant/query")
     def ask(payload: QueryInput, user=Depends(require("editor"))):
+        if settings.demo_mode:
+            from .assistant import fallback, retrieve
+            with db.session() as session:
+                evidence = retrieve(session, payload.query, window=payload.window, now=settings.demo_epoch)
+            return demo_job(fallback(evidence, "Respuesta de demostración, sin llamada a OpenAI"), user.id)
         return {
             "job_id": enqueue(db, "query", payload.model_dump(), secrets.token_hex(16), user.id)
         }
@@ -844,7 +886,7 @@ def create_app(settings: Settings | None = None):
         if window not in WINDOWS:
             raise ValueError("Ventana inválida")
         with db.session() as session:
-            result = compare(session, window)
+            result = compare(session, window, now=settings.demo_epoch)
         lines = ["# Agenda Radar", f"Ventana: {window}", result["sample_caveat"], ""]
         for row in result["rows"]:
             lines += [
@@ -862,7 +904,7 @@ def create_app(settings: Settings | None = None):
 
     def render(request, template, **context):
         if not request.state.user:
-            return RedirectResponse("/login", status_code=303)
+            return RedirectResponse(base_path + "/login", status_code=303)
         return templates.TemplateResponse(
             request=request,
             name=template,
@@ -870,7 +912,7 @@ def create_app(settings: Settings | None = None):
                 "user": request.state.user,
                 "csrf": request.state.csrf,
                 "roles": ROLES,
-                "now": time.time(),
+                "now": settings.demo_epoch or time.time(),
                 **context,
             },
         )
@@ -906,12 +948,12 @@ def create_app(settings: Settings | None = None):
     @app.get("/compare", response_class=HTMLResponse)
     @app.get("/events", response_class=HTMLResponse)
     def dashboard(request: Request, window="24h", topic="", source="", channel="", geo=""):
-        if request.url.path == "/" and not request.state.user:
+        if request.url.path == "/" and not request.state.user and not settings.demo_mode:
             return public_page(request)
         if window not in WINDOWS:
             window = "24h"
         with db.session() as session:
-            data = compare(session, window)
+            data = compare(session, window, now=settings.demo_epoch)
             source_list = list(session.scalars(select(Source)))
         if topic:
             data["rows"] = [r for r in data["rows"] if r["topic"] == topic]
@@ -938,7 +980,7 @@ def create_app(settings: Settings | None = None):
                 for state in session.scalars(select(State).where(State.key.like("event_review:%")))
                 if state.value.get("event_id") == event_id
             ]
-            comparison = compare(session)
+            comparison = compare(session, now=settings.demo_epoch)
             score = next((r for r in comparison["rows"] if r["event_id"] == event_id), None)
         return render(request, "event.html", event=data, score=score, title="Acontecimiento")
 
@@ -1049,5 +1091,64 @@ def create_app(settings: Settings | None = None):
                 "audit": "Auditoría",
             }[section],
         )
+
+    def demo_job(result, user_id):
+        with db.session() as session:
+            job = Job(kind="demo", payload={}, status="done", result=result,
+                      idempotency_key=secrets.token_hex(16), user_id=user_id)
+            session.add(job)
+            session.flush()
+            return {"job_id": job.id}
+
+    if settings.demo_mode:
+        @app.get("/api/v1/demo/status")
+        def demo_status(user=Depends(require())):
+            with db.session() as session:
+                return session.get(State, "demo_scenario").value
+
+        @app.post("/api/v1/demo/reset")
+        def demo_reset(user=Depends(require("media_admin"))):
+            from .demo_data import seed
+            with db.session() as session:
+                return seed(session, settings.demo_epoch, settings.app_base_url, reset=True)
+
+        @app.post("/api/v1/demo/news")
+        def demo_news(user=Depends(require("media_admin"))):
+            from .demo_data import simulate_news
+            with db.session() as session:
+                return simulate_news(session, settings.demo_epoch, settings.app_base_url)
+
+        @app.get("/integrations", response_class=HTMLResponse)
+        def demo_integrations(request: Request, user=Depends(require())):
+            return render(request, "demo_integrations.html", title="Integraciones de la demo")
+
+        @app.get("/evidence/{document_id}", response_class=HTMLResponse)
+        def demo_evidence(document_id: int, request: Request, user=Depends(require())):
+            with db.session() as session:
+                document = session.get(Document, document_id)
+                if not document:
+                    raise HTTPException(404, "Evidencia inexistente")
+                data = row_dict(document)
+                mention = session.get(Mention, document_id)
+                event_id = mention.event_id if mention else None
+            return render(request, "demo_evidence.html", document=data, event_id=event_id,
+                          title="Evidencia ficticia")
+
+    if settings.demo_enabled and not settings.demo_mode:
+        from .demo import DemoManager
+        manager = DemoManager(settings)
+        app.state.demo_manager = manager
+        app.mount("/demo", manager)
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def demo_lifespan(_app):
+            await manager.start()
+            try:
+                yield
+            finally:
+                await manager.stop()
+
+        app.router.lifespan_context = demo_lifespan
 
     return app

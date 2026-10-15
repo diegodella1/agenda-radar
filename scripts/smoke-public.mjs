@@ -23,7 +23,7 @@ try {
   await page.getByText('¿Publica noticias automáticamente?', {exact:true}).click();
   await page.getByText('No. El alcance actual es observar', {exact:false}).waitFor({state:'visible'});
   await page.locator('header').getByRole('link', {name:'Ingresar'}).click();
-  await page.getByLabel('Correo', {exact:true}).waitFor();
+  await page.locator('input[name="email"]').waitFor();
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('Public smoke passed: 6 routes × 3 widths, FAQ, login link, no overflow or JS errors.');
 } finally { await browser.close(); }

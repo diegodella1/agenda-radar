@@ -7,7 +7,7 @@ const errors=[];page.on('pageerror',error=>errors.push(error.message));
 const base=process.env.E2E_BASE_URL || 'http://127.0.0.1:8876';
 try {
   await page.goto(base+'/login');
-  await page.getByLabel('Correo',{exact:true}).fill(credentials.email);
+  await page.locator('input[name="email"]').fill(credentials.email);
   await page.getByLabel('Contraseña',{exact:true}).fill(credentials.password);
   await page.getByRole('button',{name:'Ingresar'}).click();
   await page.waitForURL(base+'/');

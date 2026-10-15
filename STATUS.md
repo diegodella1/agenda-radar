@@ -71,3 +71,18 @@ Guía vigente: [Configurar y operar](docs/CONFIGURAR_Y_PROBAR.md).
 ## Sitio público y repositorio — 15 de octubre de 2026
 
 Cinco páginas públicas con diseño editorial, alcance explícito, casos de uso y acceso al producto. Sin precios. La raíz conserva el dashboard autenticado. El usuario informa que cargó OpenAI; esa configuración no fue modificada por este cambio. Repositorio privado: https://github.com/diegodella1/agenda-radar.
+
+## Demo pública editable — 15 de octubre de 2026
+
+- Acceso demo / demo en /demo/login y desde login principal; CTA público.
+- SQLite por visitante, cookies separadas, 2 h, máximo 10 visitas simultáneas.
+- Escenario argentino ficticio: 7 medios, 18 acontecimientos, 103 publicaciones,
+  5 alertas históricas, tendencias, decisiones y evidencias internas.
+- Decisiones, cobertura, agrupamientos, fuentes, criterios, exportación, reinicio
+  y lote de 10 novedades con evaluación real de alertas. Asistente determinista local.
+- Sin worker demo, proveedores, claves, usuarios, backups ni operaciones externas.
+- 46 tests locales aprobados; Ruff y mypy correctos. Smoke local con dos visitantes,
+  11 pantallas a 1440/390/320 px, evidencia, asistente, novedades, reinicio y logout.
+- El primer smoke local agotó el timeout de carga durante pruebas concurrentes;
+  el recorrido completo posterior pasó con timeout de 60 s y ejecución separada.
+- Plan y operación en docs/DEMO_PLAN.md y docs/DEMO.md.

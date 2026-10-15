@@ -7,7 +7,7 @@ try {
  const page=await browser.newPage({viewport:{width:1440,height:1000}});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base+'/login');
- await page.getByLabel('Correo',{exact:true}).fill(credentials.email);
+ await page.locator('input[name="email"]').fill(credentials.email);
  await page.getByLabel('Contraseña',{exact:true}).fill(credentials.password);
  await page.getByRole('button',{name:'Ingresar'}).click();
  await page.waitForURL(base+'/');
