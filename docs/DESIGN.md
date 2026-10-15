@@ -51,3 +51,12 @@ Menú móvil y ayuda verificados con teclado, Escape y retorno de foco.
 Contrastes principales medidos: texto 14,85:1; secundario 5,58:1; azul sobre blanco 6,51:1;
 navegación secundaria 9,41:1; estado de cobertura 5,62:1.
 Fuentes locales incluidas también en el paquete Python, con su licencia.
+
+### Verificación pública de esta entrega
+La nueva imagen está desplegada y /health/ready responde correctamente. La suite local
+y CI aprobaron. La comprobación integral por HTTPS quedó incompleta: Chromium agotó
+el tiempo al capturar una página y al esperar una navegación; un intento posterior
+se interrumpió tras aproximadamente cinco minutos sin resultado final. No se declara
+aprobado ese recorrido remoto. Las capturas locales y el recorrido local en cinco
+tamaños sí fueron revisados. El script admite SMOKE_SCREENSHOTS=0 para separar
+la comprobación funcional de las capturas en equipos con recursos limitados.
