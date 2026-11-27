@@ -90,8 +90,9 @@ async def run(settings):
                         await asyncio.to_thread(socket.close)
                         socket = None
                     if config.get('enabled'):
-                        socket = await asyncio.to_thread(socket_client, db, vault)
-                        await asyncio.to_thread(socket.connect)
+                        connected = await asyncio.to_thread(socket_client, db, vault)
+                        await asyncio.to_thread(connected.connect)
+                        socket = connected
                     fingerprint = current
                 for agent_id in await asyncio.to_thread(due_agents, db):
                     enqueue(db, 'agent_run', {'agent_id': agent_id}, f'agent:{agent_id}:{int(time.time()//300)}')

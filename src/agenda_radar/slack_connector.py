@@ -3,6 +3,7 @@ import html
 import json
 import time
 from datetime import datetime
+from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -154,13 +155,13 @@ def message_blocks(item, settings):
     title = html.escape(item.get('title', 'Agenda Radar'))[:250]
     summary = html.escape(item.get('summary') or item.get('reason', ''))[:1800]
     sources = '\n'.join('<' + quote(doc['url'], safe=':/?=&%#') + '|' + html.escape(doc['title'])[:150] + '>' for doc in item.get('evidence', [])[:5])
-    blocks = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': f'*{title}*\n{summary}'}}]
+    blocks: list[dict[str, Any]] = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': f'*{title}*\n{summary}'}}]
     if sources:
         blocks.append({'type': 'section', 'text': {'type': 'mrkdwn', 'text': sources[:2800]}})
     if item.get('event_id'):
         labels = [('follow', 'Seguir' if es else 'Follow'), ('dismiss', 'Descartar' if es else 'Dismiss'),
                   ('mute', 'Silenciar 2 h' if es else 'Mute 2h'), ('claim', 'Me encargo' if es else 'I’ll review')]
-        buttons = [{'type': 'button', 'text': {'type': 'plain_text', 'text': label}, 'action_id': action,
+        buttons: list[dict[str, Any]] = [{'type': 'button', 'text': {'type': 'plain_text', 'text': label}, 'action_id': action,
                     'value': json.dumps({'event_id': item['event_id']})} for action, label in labels]
         buttons.append({'type': 'button', 'text': {'type': 'plain_text', 'text': 'Ver fuentes' if es else 'View sources'},
                         'url': settings.app_base_url.rstrip('/')+f"/events/{item['event_id']}"})
@@ -168,7 +169,110 @@ def message_blocks(item, settings):
     return blocks
 
 
+def deliver_telegram_agent(db, vault, settings):
+    """Deliver queued agent cards targeted to Telegram to linked enabled editors."""
+    import asyncio
+
+    from .alerts import quiet
+    from .editorial import active_config
+    from .models import TelegramLink
+    from .telegram_bot import Telegram
+
+    with db.session() as session:
+        _, config = active_config(session)
+        if not config.telegram_enabled or not vault.get(session, 'telegram'):
+            return
+        delivery = session.scalar(
+            select(ChannelDelivery)
+            .where(
+                ChannelDelivery.channel == 'telegram',
+                ChannelDelivery.status == 'pending',
+                ChannelDelivery.run_after <= time.time(),
+            )
+            .order_by(ChannelDelivery.id)
+            .limit(1)
+        )
+        if not delivery:
+            return
+        if quiet(config, settings.app_timezone):
+            delivery.run_after = time.time() + 300
+            return
+        follow = session.get(EditorialFollowup, delivery.event_id) if delivery.event_id else None
+        if delivery.expires_at < time.time() or (follow and follow.status in ('dismissed', 'completed')):
+            delivery.status = 'expired'
+            return
+        if follow and follow.muted_until > time.time():
+            delivery.run_after = follow.muted_until
+            return
+        payload = dict(delivery.payload)
+        evidence = payload.get('evidence', [])
+        if evidence and len(permitted_evidence(session, evidence, 'external')) != len(evidence):
+            delivery.status = 'policy_restricted'
+            return
+        if any(
+            item.get('hash')
+            and (not (document := session.get(Document, item['id'])) or document.content_hash != item['hash'])
+            for item in evidence
+        ):
+            delivery.status = 'superseded'
+            return
+        chats = [
+            link.chat_id
+            for link in session.scalars(
+                select(TelegramLink)
+                .join(User)
+                .where(TelegramLink.chat_id.is_not(None), User.enabled.is_(True))
+            )
+            if link.chat_id and link.muted_until <= time.time()
+        ]
+        if not chats:
+            delivery.status = 'expired'
+            return
+        delivery.status, delivery.attempt = 'sending', delivery.attempt + 1
+        identifier = delivery.id
+        event_id = delivery.event_id
+    es = payload.get('language') == 'es'
+    title = payload.get('title', 'Agenda Radar')
+    summary = payload.get('summary') or payload.get('reason', '')
+    links = '\n'.join(doc['url'] for doc in evidence[:3])
+    text_msg = f"{title}\n{summary}\n{links}"
+    if event_id:
+        text_msg += f"\n{settings.app_base_url.rstrip('/')}/events/{event_id}"
+    reply_markup = (
+        {
+            'inline_keyboard': [
+                [
+                    {'text': 'Seguir' if es else 'Follow', 'callback_data': f'follow:{event_id}'},
+                    {'text': 'Descartar' if es else 'Dismiss', 'callback_data': f'dismiss:{event_id}'},
+                ]
+            ]
+        }
+        if event_id
+        else None
+    )
+    tg = Telegram(db, vault)
+    try:
+        async def _send_all():
+            for chat_id in chats:
+                body: dict[str, Any] = {'chat_id': chat_id, 'text': text_msg[:4000]}
+                if reply_markup:
+                    body['reply_markup'] = reply_markup
+                await tg.call('sendMessage', body)
+
+        asyncio.run(_send_all())
+        with db.session() as session:
+            current = session.get(ChannelDelivery, identifier)
+            current.status = 'sent'
+    except Exception:
+        with db.session() as session:
+            current = session.get(ChannelDelivery, identifier)
+            current.status = 'pending' if current.attempt < 5 else 'failed'
+            current.error_code = 'telegram_delivery_failed'
+            current.run_after = time.time() + min(3600, 60 * current.attempt)
+
+
 def deliver_one(db, vault, settings):
+    deliver_telegram_agent(db, vault, settings)
     with db.session() as session:
         config = slack_config(session)
         if not config.get('enabled'):
@@ -176,7 +280,7 @@ def deliver_one(db, vault, settings):
         local_hour = datetime.now(ZoneInfo(config.get('timezone', settings.app_timezone))).hour
         start, end = config.get('quiet_start', 23), config.get('quiet_end', 7)
         quiet = start <= local_hour < end if start < end else (local_hour >= start or local_hour < end) if start != end else False
-        delivery = session.scalar(select(ChannelDelivery).where(ChannelDelivery.status == 'pending', ChannelDelivery.run_after <= time.time()).order_by(ChannelDelivery.id).limit(1))
+        delivery = session.scalar(select(ChannelDelivery).where(ChannelDelivery.channel == 'slack', ChannelDelivery.status == 'pending', ChannelDelivery.run_after <= time.time()).order_by(ChannelDelivery.id).limit(1))
         if not delivery:
             return
         if not delivery.payload.get('user_id'):
@@ -247,20 +351,36 @@ def answer_slack(db, vault, settings, job):
         authorized(session, data['slack_user'], data['channel'])
     query = re.sub(r'<@[A-Z0-9]+>', '', data['query']).strip()
     es = data['language'] == 'es'
+    answer: dict[str, Any]
     if query.lower() in ('help', 'ayuda'):
         answer = {'answer': '/radar agenda · /radar brechas · /radar briefing · @Agenda Radar + pregunta' if es else '/radar agenda · /radar gaps · /radar briefing · @Agenda Radar + question', 'evidence': []}
     elif query.lower() in ('agenda', 'brechas', 'gaps', 'briefing'):
+        from .scoring import compare
         with db.session() as session:
-            from .models import Alert, Event
-            statement = select(Event).where(Event.status == 'active').order_by(Event.id.desc()).limit(30)
+            rows = compare(session, '24h')['rows']
             if query.lower() in ('brechas', 'gaps'):
-                statement = statement.where(Event.id.in_(select(Alert.event_id).where(Alert.rule == 'editorial_gap', Alert.at >= time.time()-86400)))
-            evidence = []
-            for event in session.scalars(statement):
-                evidence.extend(evidence_for_event(session, event.id)[:1])
+                rows = [r for r in rows if r['gap_pp'] is not None and r['gap_pp'] > 0]
+                rows.sort(key=lambda r: r['gap_pp'], reverse=True)
+            evidence: list[dict[str, Any]] = []
+            lines: list[str] = []
+            for row in rows:
+                ev = evidence_for_event(session, row['event_id'])[:1]
+                if not ev:
+                    continue
+                evidence.extend(ev)
+                ref = f"{row['reference_share']:.1f}%" if row['reference_share'] is not None else '—'
+                gap = f"{row['gap_pp']:+.1f} pp" if row['gap_pp'] is not None else '—'
+                lines.append(
+                    f"• {row['label']} (Ref {ref} · {'Brecha' if es else 'Gap'} {gap} · {row['independent_source_count']} {'grupos' if es else 'groups'})"
+                )
                 if len(evidence) >= 5:
                     break
-        answer = {'answer': 'Publicaciones para revisar. Solo fuentes autorizadas.' if es else 'Publications to review. Authorized sources only.', 'evidence': evidence}
+        summary_text = (
+            '\n'.join(lines)
+            if lines
+            else ('Sin evidencia autorizada para compartir.' if es else 'No authorized evidence available to share.')
+        )
+        answer = {'answer': summary_text, 'evidence': evidence}
     else:
         answer = answer_query(db, vault, query, language=data['language'], destination='external')
     payload = {'title': 'Agenda Radar', 'summary': answer['answer'], 'evidence': answer['evidence'],

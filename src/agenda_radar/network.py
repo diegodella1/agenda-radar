@@ -4,6 +4,7 @@ import http.client
 import ipaddress
 import socket
 import ssl
+import zlib
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
@@ -66,6 +67,43 @@ class FetchResult:
     headers: dict[str, str]
 
 
+def _read_bounded(response, encoding: str) -> bytes:
+    encoding = (encoding or "identity").split(",")[0].strip().lower()
+    if encoding == "identity":
+        body = response.read(MAX_BYTES + 1)
+        if len(body) > MAX_BYTES:
+            raise FetchError("response_too_large")
+        return body
+    if encoding not in ("gzip", "x-gzip", "deflate"):
+        raise FetchError("compressed_response_unsupported")
+    wbits = 16 + zlib.MAX_WBITS if "gzip" in encoding else zlib.MAX_WBITS
+    decompressor = zlib.decompressobj(wbits)
+    chunks: list[bytes] = []
+    raw_total = 0
+    out_total = 0
+    try:
+        while True:
+            raw = response.read(65536)
+            if not raw:
+                break
+            raw_total += len(raw)
+            if raw_total > MAX_BYTES:
+                raise FetchError("response_too_large")
+            part = decompressor.decompress(raw, MAX_BYTES - out_total + 1)
+            out_total += len(part)
+            if out_total > MAX_BYTES or decompressor.unconsumed_tail:
+                raise FetchError("response_too_large")
+            chunks.append(part)
+        tail = decompressor.flush(MAX_BYTES - out_total + 1)
+        out_total += len(tail)
+        if out_total > MAX_BYTES:
+            raise FetchError("response_too_large")
+        chunks.append(tail)
+    except zlib.error as exc:
+        raise FetchError("compressed_response_unsupported") from exc
+    return b"".join(chunks)
+
+
 def fetch(url: str, headers: dict | None = None) -> FetchResult:
     for _ in range(5):
         host, port, addresses = public_addresses(url)
@@ -83,7 +121,7 @@ def fetch(url: str, headers: dict | None = None) -> FetchResult:
                 headers={
                     "Host": host,
                     "User-Agent": USER_AGENT,
-                    "Accept-Encoding": "identity",
+                    "Accept-Encoding": "gzip, deflate, identity",
                     **(headers or {}),
                 },
             )
@@ -100,11 +138,7 @@ def fetch(url: str, headers: dict | None = None) -> FetchResult:
                 return FetchResult(url, 304, b"", result_headers)
             if response.status >= 400:
                 raise FetchError(f"http_{response.status}")
-            if result_headers.get("content-encoding", "identity") != "identity":
-                raise FetchError("compressed_response_unsupported")
-            body = response.read(MAX_BYTES + 1)
-            if len(body) > MAX_BYTES:
-                raise FetchError("response_too_large")
+            body = _read_bounded(response, result_headers.get("content-encoding", "identity"))
             return FetchResult(url, response.status, body, result_headers)
         except (OSError, http.client.HTTPException) as exc:
             raise FetchError("network_failure") from exc

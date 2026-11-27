@@ -189,45 +189,68 @@ async def run(settings: Settings):
 
     tasks = [asyncio.create_task(telegram_loop()), asyncio.create_task(pulse_loop())]
     last_score = 0.0
+    score_dirty = False
+    max_polls = max(1, settings.fetch_concurrency)
+    active_polls: set[asyncio.Task] = set()
+
+    async def run_job(job):
+        nonlocal score_dirty
+        lease = asyncio.create_task(lease_loop(job.id))
+        try:
+            result = await asyncio.to_thread(execute_job, db, vault, settings, job)
+            if job.kind == "telegram_query":
+                answer = (
+                    result["answer"]
+                    + "\n"
+                    + "\n".join(d["url"] for d in result["evidence"][:5])
+                )
+                await telegram.call(
+                    "sendMessage",
+                    {"chat_id": job.payload["chat_id"], "text": answer[:4000]},
+                )
+            await asyncio.to_thread(finish, db, job.id, owner, result)
+            if job.kind == "poll":
+                score_dirty = True
+        except Exception as exc:
+            code = getattr(exc, "code", "job_failed")
+            await asyncio.to_thread(finish, db, job.id, owner, error=code)
+            log.warning("job_failed id=%s code=%s", job.id, code)
+        finally:
+            lease.cancel()
+
     try:
         while True:
             from .collaboration_worker import COLLABORATION_JOBS
             excluded = COLLABORATION_JOBS if settings.collaboration_enabled else tuple(
                 kind for kind in COLLABORATION_JOBS if kind not in ('query', 'telegram_query', 'enrich', 'test_prompt'))
-            job = await asyncio.to_thread(claim, db, owner, exclude_kinds=excluded)
-            if job:
-                lease = asyncio.create_task(lease_loop(job.id))
-                try:
-                    result = await asyncio.to_thread(execute_job, db, vault, settings, job)
-                    if job.kind == "telegram_query":
-                        answer = (
-                            result["answer"]
-                            + "\n"
-                            + "\n".join(d["url"] for d in result["evidence"][:5])
-                        )
-                        await telegram.call(
-                            "sendMessage",
-                            {"chat_id": job.payload["chat_id"], "text": answer[:4000]},
-                        )
-                    await asyncio.to_thread(finish, db, job.id, owner, result)
-                    if job.kind == "poll":
-                        last_score = 0
-                except Exception as exc:
-                    code = getattr(exc, "code", "job_failed")
-                    await asyncio.to_thread(finish, db, job.id, owner, error=code)
-                    log.warning("job_failed id=%s code=%s", job.id, code)
-                finally:
-                    lease.cancel()
-            if time.time() - last_score >= 300:
+            active_polls = {t for t in active_polls if not t.done()}
+            claimed_any = False
+            while len(active_polls) < max_polls:
+                job = await asyncio.to_thread(claim, db, owner, exclude_kinds=excluded)
+                if not job:
+                    break
+                claimed_any = True
+                if job.kind == "poll" and max_polls > 1:
+                    task = asyncio.create_task(run_job(job))
+                    active_polls.add(task)
+                else:
+                    if active_polls:
+                        await asyncio.gather(*active_polls, return_exceptions=True)
+                        active_polls.clear()
+                    await run_job(job)
+                    break
+            now_mono = time.time()
+            if now_mono - last_score >= 300 or (score_dirty and not claimed_any and not active_polls and now_mono - last_score >= 60):
                 await asyncio.to_thread(recalculate, db)
                 last_score = time.time()
+                score_dirty = False
             try:
                 await deliver_notifications(db, telegram, settings)
                 await deliver_health(db, telegram, settings)
             except Exception:
                 log.warning("notification_cycle_failed")
-            await asyncio.sleep(1 if job else 3)
+            await asyncio.sleep(1 if (claimed_any or active_polls) else 3)
     finally:
-        for task in tasks:
+        for task in [*tasks, *active_polls]:
             task.cancel()
         lock.close()

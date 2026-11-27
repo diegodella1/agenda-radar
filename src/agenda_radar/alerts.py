@@ -200,10 +200,12 @@ async def deliver_notifications(db, telegram, settings):
                 continue
             alert = session.get(Alert, item.alert_id)
             row = alert.payload
+            def _fmt(val, suffix=""):
+                return f"{val:.1f}{suffix}" if val is not None else "sin datos"
             text = (
                 f"{RULE_LABELS.get(alert.rule, alert.rule)} · {row['label']}\n"
-                f"Referencia {row['reference_share']:.1f}% · Propia {row['own_share']:.1f}%\n"
-                f"Brecha {row['gap_pp']:.1f} pp · {row['independent_source_count']} grupos independientes\n"
+                f"Referencia {_fmt(row.get('reference_share'), '%')} · Propia {_fmt(row.get('own_share'), '%')}\n"
+                f"Brecha {_fmt(row.get('gap_pp'), ' pp')} · {row['independent_source_count']} grupos independientes\n"
                 + "\n".join(d["url"] for d in row["documents"][:3])
                 + f"\n{settings.app_base_url}/events/{alert.event_id}"
             )

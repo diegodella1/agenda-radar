@@ -2,15 +2,21 @@ import time
 
 from sqlalchemy import delete, select
 
+from .collaboration_models import AgentRun, AIRun, ChannelDelivery, EditorialFollowup, SlackThread
 from .models import (
     Alert,
     Decision,
     Document,
     DocumentVersion,
+    Event,
+    IngestRun,
+    Job,
     LoginSession,
     Mention,
     Observation,
+    OwnCoverage,
     ScoreSnapshot,
+    State,
     TrendSample,
 )
 
@@ -18,12 +24,44 @@ from .models import (
 def maintain(db, now=None):
     now = now or time.time()
     cutoff = now - 90 * 86400
+    ops_cutoff = now - 30 * 86400
+    collab_cutoff = now - 60 * 86400
     with db.session() as session:
         session.execute(delete(LoginSession).where(LoginSession.expires_at < now))
         session.execute(delete(ScoreSnapshot).where(ScoreSnapshot.as_of < cutoff))
         session.execute(delete(TrendSample).where(TrendSample.captured_at < cutoff))
-        protected = set(session.scalars(select(Decision.event_id))) | set(
-            session.scalars(select(Alert.event_id))
+        session.execute(delete(IngestRun).where(IngestRun.started_at < ops_cutoff))
+        session.execute(
+            delete(Job).where(Job.status.in_(["done", "failed"]), Job.run_after < ops_cutoff)
+        )
+        session.execute(delete(AgentRun).where(AgentRun.at < collab_cutoff))
+        session.execute(delete(AIRun).where(AIRun.at < collab_cutoff))
+        session.execute(
+            delete(ChannelDelivery).where(
+                ChannelDelivery.status.in_(["sent", "failed", "expired", "revoked", "superseded", "policy_restricted"]),
+                ChannelDelivery.created_at < collab_cutoff,
+            )
+        )
+        for state in list(
+            session.scalars(
+                select(State).where(
+                    State.key.like("telegram_handled:%") | State.key.like("event_review:%")
+                )
+            )
+        ):
+            if isinstance(state.value, dict) and state.value.get("at", now) < ops_cutoff:
+                session.delete(state)
+        protected = (
+            set(session.scalars(select(Decision.event_id)))
+            | set(session.scalars(select(Alert.event_id)))
+            | set(session.scalars(select(EditorialFollowup.event_id)))
+            | set(session.scalars(select(SlackThread.event_id)))
+            | set(session.scalars(select(OwnCoverage.event_id)))
+            | {
+                eid
+                for eid in session.scalars(select(ChannelDelivery.event_id))
+                if eid is not None
+            }
         )
         candidates = list(
             session.execute(
@@ -40,10 +78,25 @@ def maintain(db, now=None):
             for model in (Observation, DocumentVersion, Mention):
                 session.execute(delete(model).where(model.document_id.in_(batch)))
             session.execute(delete(Document).where(Document.id.in_(batch)))
+        session.flush()
+        active_events = set(session.scalars(select(Mention.event_id))) | {
+            pid for pid in session.scalars(select(Event.parent_event_id)) if pid is not None
+        }
+        orphan_events = [
+            eid
+            for eid in session.scalars(select(Event.id).where(Event.first_observed_at < cutoff))
+            if eid not in active_events and eid not in protected
+        ]
+        for offset in range(0, len(orphan_events), 300):
+            session.execute(delete(Event).where(Event.id.in_(orphan_events[offset : offset + 300])))
     with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-        connection.exec_driver_sql("PRAGMA wal_checkpoint(PASSIVE)")
+        connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
         connection.exec_driver_sql("PRAGMA optimize")
-    return {"documents_removed": len(identifiers), "retention_days": 90}
+    return {
+        "documents_removed": len(identifiers),
+        "events_removed": len(orphan_events),
+        "retention_days": 90,
+    }
 
 
 def rotate_backups(directory):

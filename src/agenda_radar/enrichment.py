@@ -8,8 +8,27 @@ from sqlalchemy import select
 
 from .assistant import SYSTEM_PROMPT, reserve_budget, retrieve
 from .editorial import active_config
-from .models import APIUsage, Document, Mention, Prompt, State
+from .models import APIUsage, Document, Event, Mention, Prompt, State
 from .security import audit
+
+
+def sync_event_topic(session, document_id: int) -> None:
+    """Update Event.topic to the majority non-general topic across its mentions."""
+    mention = session.get(Mention, document_id)
+    if not mention:
+        return
+    event = session.get(Event, mention.event_id)
+    if not event:
+        return
+    topics = [
+        t
+        for t in session.scalars(
+            select(Document.topic).join(Mention).where(Mention.event_id == event.id)
+        )
+        if t and t != "general"
+    ]
+    if topics:
+        event.topic = max(set(topics), key=topics.count)
 
 
 class ExtractedEntity(BaseModel):
@@ -56,6 +75,7 @@ def enrich_with_profile(db, vault, profile, document, config, apply):
         current.entities = [entity.model_dump() for entity in result.entities if entity.name and entity.name in entity.evidence_span and entity.evidence_span in corpus]
         if result.topic in config.topic_keywords:
             current.topic = result.topic
+            sync_event_topic(session, current.id)
         if result.related_document_id != current.id and result.related_document_id in {item['id'] for item in candidates}:
             related = session.get(Mention, result.related_document_id)
             if related and mention and related.event_id != mention.event_id:
@@ -172,6 +192,7 @@ def enrich_document(db, vault, document_id, expected_hash, prompt_id=None, apply
         document.entities = valid_entities
         if result.topic in config.topic_keywords:
             document.topic = result.topic
+            sync_event_topic(session, document.id)
         if result.related_document_id in {item["id"] for item in candidates}:
             related = session.get(Mention, result.related_document_id)
             own = session.get(Mention, document_id)

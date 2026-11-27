@@ -11,6 +11,7 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff check src tests scripts
       - run: mypy src/agenda_radar
-      - run: node --check src/agenda_radar/static/app.js && node --check src/agenda_radar/static/config-editor.js
+      - run: for f in src/agenda_radar/static/*.js; do node --check "$f"; done
+      - run: node --test scripts/test-jobs.mjs
       - run: pytest -q
       - run: pip wheel --no-deps . --wheel-dir dist

@@ -87,6 +87,7 @@ class EditorialConfig(StrictModel):
     minimum_gap_pp: float = Field(default=15, ge=0, le=100)
     minimum_independent_sources: int = Field(default=3, ge=2, le=50)
     minimum_confidence: float = Field(default=0.7, ge=0, le=1)
+    clustering_threshold: float = Field(default=0.52, ge=0.3, le=0.95)
     cooldown_minutes: int = Field(default=90, ge=20, le=10080)
     rearm_change_pp: float = Field(default=10, ge=0, le=100)
     quiet_start: int = Field(default=23, ge=0, le=23)

@@ -19,13 +19,7 @@ class Settings(BaseSettings):
     backup_dir: Path = Path("data/backups")
 
     demo_enabled: bool = False
-    demo_showcase: bool = False
-    demo_mode: bool = False
-    demo_epoch: float | None = None
-    demo_dir: Path = Path("data/demo")
-    demo_max_sessions: int = 10
-    demo_session_seconds: int = 7200
-    demo_corpus_dir: Path = Path("demo-corpus")
+    demo_showcase: bool = True
 
     @property
     def database_path(self) -> Path:

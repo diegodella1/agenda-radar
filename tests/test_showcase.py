@@ -9,10 +9,9 @@ def test_showcase_needs_no_database_corpus_or_external_requests(tmp_path, monkey
         raise AssertionError("Showcase must not initialize a database or import news")
 
     monkeypatch.setattr("agenda_radar.db.Database.migrate", forbidden)
-    monkeypatch.setattr("agenda_radar.demo_corpus.read_snapshot", forbidden)
     settings = Settings(_env_file=None, data_dir=tmp_path / "data",
-                        secrets_dir=tmp_path / "secrets", demo_dir=tmp_path / "demo",
-                        demo_enabled=True, demo_showcase=True, cookie_secure=False)
+                        secrets_dir=tmp_path / "secrets",
+                        demo_enabled=True, cookie_secure=False)
     app = create_app(settings)
     with TestClient(app) as client:
         for path in ("/demo/", "/demo/login", "/demo/events/1", "/demo/admin/config"):
@@ -24,7 +23,6 @@ def test_showcase_needs_no_database_corpus_or_external_requests(tmp_path, monkey
         assert client.post("/demo/api/v1/demo/news", json={}).status_code == 405
         assert client.get("/demo/unknown").status_code == 404
     assert not settings.database_path.exists()
-    assert not settings.demo_dir.exists()
     app.state.db.engine.dispose()
 
 

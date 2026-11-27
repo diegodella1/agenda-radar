@@ -55,6 +55,7 @@ class Telegram:
             return
         chat_id = chat.get("id")
         body = message.get("text", "").strip()
+        callback_id = update.get("callback_query", {}).get("id")
         with self.db.session() as session:
             handled_key = f"telegram_handled:{update['update_id']}"
             if session.get(State, handled_key):
@@ -153,4 +154,9 @@ class Telegram:
                 user_id=user_id,
             )
             response = "Consulta recibida. Estoy revisando la evidencia."
+        if callback_id:
+            try:
+                await self.call("answerCallbackQuery", {"callback_query_id": callback_id})
+            except Exception:
+                pass
         await self.call("sendMessage", {"chat_id": chat_id, "text": response[:4000]})

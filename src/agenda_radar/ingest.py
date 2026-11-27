@@ -25,9 +25,29 @@ from .network import FetchError, check_robots, fetch
 from .schemas import DocumentInput
 
 STOPWORDS = set(
-    "de la el en los las del un una por para con que al se y a o su sus es como más ante tras sobre".split()
+    "de la el en los las del un una por para con que al se y a o su sus es como más ante tras sobre tras entre desde hasta sin fue son era serán este esta estos estas pero tras luego tras tras".split()
 )
-STOPWORDS.update('the and for with from this that these those into about which their have has was were are not but'.split())
+STOPWORDS.update(
+    "the and for with from this that these those into about which their have has was were are not but after over under will been more than".split()
+)
+
+_STEM_SUFFIXES = (
+    "amientos", "imiento", "imientos", "aciones", "iciones", "amiento",
+    "acion", "icion", "idades", "mente", "ieron", "arian", "erian", "irian",
+    "ando", "iendo", "aron", "idad", "ista", "istas", "ivos", "ivas", "able",
+    "ibles", "tion", "sion", "ment", "ness", "ings", "ing", "ied", "ies",
+    "ado", "ada", "ados", "adas", "ido", "ida", "idos", "idas", "ero", "era",
+    "es", "ed", "s",
+)
+
+
+def stem_token(word: str) -> str:
+    if len(word) <= 4 or word.isdigit():
+        return word
+    for suffix in _STEM_SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            return word[: -len(suffix)]
+    return word
 
 
 def tokens(value: str) -> set[str]:
@@ -35,6 +55,54 @@ def tokens(value: str) -> set[str]:
         c for c in unicodedata.normalize("NFKD", value.lower()) if not unicodedata.combining(c)
     )
     return {word for word in re.findall(r"\w+", value) if len(word) > 2 and word not in STOPWORDS}
+
+
+def stemmed_tokens(value: str) -> set[str]:
+    return {stem_token(word) for word in tokens(value)}
+
+
+def extract_entities(value: str) -> set[str]:
+    """Deterministic proper-noun & acronym extractor (no LLM required)."""
+    found: set[str] = set()
+    for acronym in re.findall(r"\b[A-ZÁÉÍÓÚÑ]{2,6}\b", value):
+        norm = "".join(c for c in unicodedata.normalize("NFKD", acronym.lower()) if not unicodedata.combining(c))
+        if norm not in STOPWORDS:
+            found.add(norm)
+    # Multi-word proper nouns anywhere (including headline start, e.g. "Banco Central", "Corte Suprema")
+    for phrase in re.findall(r"\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})+\b", value):
+        norm = "".join(c for c in unicodedata.normalize("NFKD", phrase.lower()) if not unicodedata.combining(c))
+        parts = [p for p in norm.split() if p not in STOPWORDS and len(p) > 2]
+        if parts:
+            found.add(" ".join(parts))
+            found.update(parts)
+    # Single proper nouns mid-sentence
+    for phrase in re.findall(r"(?<!^)(?<!\. )(?:[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})*)", value):
+        norm = "".join(c for c in unicodedata.normalize("NFKD", phrase.lower()) if not unicodedata.combining(c))
+        parts = [p for p in norm.split() if p not in STOPWORDS and len(p) > 2]
+        if parts:
+            found.add(" ".join(parts))
+            if len(parts) > 1:
+                found.update(parts)
+    return found
+
+
+def classify_topic(text_value: str, topic_keywords: dict[str, list[str]]) -> str:
+    doc_tokens = tokens(text_value)
+    doc_stems = {stem_token(w) for w in doc_tokens}
+    best_topic = "general"
+    best_hits = 0
+    for topic, keywords in topic_keywords.items():
+        hits = 0
+        for keyword in keywords:
+            kw_tokens = tokens(keyword)
+            if not kw_tokens:
+                continue
+            if kw_tokens <= doc_tokens or {stem_token(w) for w in kw_tokens} <= doc_stems:
+                hits += 1
+        if hits > best_hits:
+            best_hits = hits
+            best_topic = topic
+    return best_topic
 
 
 def canonical_url(url: str) -> str:
@@ -131,18 +199,26 @@ def parse_feed(body: bytes, base_url: str) -> list[DocumentInput]:
     return items[:500]
 
 
-def cluster_document(session, document: Document):
+def cluster_document(session, document: Document, threshold: float | None = None):
     if session.get(Mention, document.id):
         return
-    words = tokens(document.title)
+    if threshold is None:
+        _, config = active_config(session)
+        threshold = getattr(config, "clustering_threshold", 0.52)
+    title_raw = tokens(document.title)
+    title_stems = {stem_token(w) for w in title_raw}
+    full_text = document.title + " " + (document.excerpt or "")[:300]
+    context_stems = stemmed_tokens(full_text)
+    doc_entities = extract_entities(full_text)
     match = None
     best = 0.0
-    if words:
-        query = " OR ".join('"' + word.replace('"', "") + '"' for word in sorted(words)[:15])
+    query_terms = sorted(title_raw | tokens((document.excerpt or "")[:180]))[:20]
+    if query_terms:
+        query = " OR ".join('"' + word.replace('"', "") + '"' for word in query_terms)
         candidate_ids = list(session.execute(
             text("""SELECT d.id FROM document_fts f
             JOIN documents d ON d.id=f.rowid WHERE document_fts MATCH :query
-            AND d.id != :id AND d.observed_at >= :since ORDER BY rank LIMIT 30"""),
+            AND d.id != :id AND d.observed_at >= :since ORDER BY rank LIMIT 40"""),
             {"query": query, "id": document.id, "since": document.observed_at - 72 * 3600},
         ).scalars())
         candidates = {
@@ -159,17 +235,35 @@ def cluster_document(session, document: Document):
             if candidate_id not in candidates:
                 continue
             candidate, event = candidates[candidate_id]
-            other_words = tokens(candidate.title)
-            overlap = len(words & other_words) / max(1, len(words | other_words))
-            # SequenceMatcher cannot exceed 1, so these candidates cannot qualify.
-            if event.status == "merged" or 0.75 * overlap + 0.25 < max(0.66, best):
+            if event.status == "merged":
                 continue
-            similarity = (
-                0.75 * overlap
-                + 0.25
-                * SequenceMatcher(None, document.title.lower(), candidate.title.lower()).ratio()
+            other_title = stemmed_tokens(candidate.title)
+            title_shared = len(title_stems & other_title)
+            title_dice = (2.0 * title_shared) / max(1, len(title_stems) + len(other_title))
+            other_full = candidate.title + " " + (candidate.excerpt or "")[:300]
+            other_context = stemmed_tokens(other_full)
+            ctx_shared = len(context_stems & other_context)
+            ctx_overlap = (
+                (ctx_shared / max(1, min(len(context_stems), len(other_context))))
+                * min(1.0, ctx_shared / 3.0)
             )
-            if event.status != "merged" and similarity > best and similarity >= 0.66:
+            other_entities = extract_entities(other_full)
+            ent_shared = len(doc_entities & other_entities)
+            ent_overlap = (
+                ent_shared / max(1, min(len(doc_entities), len(other_entities)))
+                if doc_entities and other_entities and ent_shared >= 1
+                else 0.0
+            )
+            lexical_base = 0.35 * title_dice + 0.40 * ctx_overlap + 0.15 * ent_overlap
+            # SequenceMatcher contributes at most 0.10; skip candidates that cannot reach threshold.
+            if lexical_base + 0.10 < max(threshold, best):
+                continue
+            similarity = min(
+                1.0,
+                lexical_base
+                + 0.10 * SequenceMatcher(None, document.title.lower(), candidate.title.lower()).ratio(),
+            )
+            if similarity > best and similarity >= threshold:
                 best, match = similarity, event
     if match is None:
         match = Event(
@@ -209,19 +303,7 @@ def store_document(session, source: Source, item: DocumentInput, now=None) -> Do
     )
     content_hash = hashlib.sha256((item.title + "\n" + item.excerpt).encode()).hexdigest()
     _, config = active_config(session)
-    document_tokens = tokens(item.title + " " + item.excerpt)
-    topic = next(
-        (
-            topic
-            for topic, keywords in config.topic_keywords.items()
-            if any(
-                tokens(keyword) <= document_tokens
-                for keyword in keywords
-                if tokens(keyword)
-            )
-        ),
-        "general",
-    )
+    topic = classify_topic(item.title + " " + item.excerpt, config.topic_keywords)
     if document is None:
         document = Document(
             publisher=publisher,
@@ -344,6 +426,12 @@ def poll_source(db, source_id: int, vault=None):
             source.last_success = time.time()
             source.status, source.error_code = "healthy", None
             source.next_poll = time.time() + source.poll_interval
+            if source.kind == "x" and items:
+                ids = [int(item.external_id) for item in items if item.external_id.isdigit()]
+                if ids:
+                    prev_since = source.options.get("since_id")
+                    best_id = max(ids + ([int(prev_since)] if prev_since and str(prev_since).isdigit() else []))
+                    source.options = {**(source.options or {}), "since_id": str(best_id)}
             if response:
                 source.etag = response.headers.get("etag", source.etag)
                 source.modified = response.headers.get("last-modified", source.modified)

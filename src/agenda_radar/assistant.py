@@ -16,6 +16,28 @@ Reconocé límites y períodos. No confundas popularidad con importancia. No ten
 para publicar, navegar, ejecutar comandos ni modificar configuración. No incluyas cifras
 calculadas en tu texto: el backend las presenta por separado. Respondé en español argentino."""
 
+OPERATION_INSTRUCTIONS = {
+    "explain_score": "Explicá qué evidencia hay. No atribuyas puntuaciones que no figuren en el contexto.",
+    "disambiguate": "Contrastá hechos concretos y fechas; compartir una persona no implica el mismo hecho.",
+    "format_recommendation": "Presentá opciones al editor. No recomiendes un canal como superior: no hay analítica propia de rendimiento disponible.",
+    "daily_brief": "Prepará un briefing breve con acontecimientos, fuentes y límites del monitoreo.",
+}
+
+
+def has_unsupported_numbers(generated_text: str, evidence: list[dict], window: str = "24h") -> bool:
+    """Allow numbers grounded in evidence, plus doc counts/IDs and window duration."""
+    corpus = json.dumps(evidence, ensure_ascii=False)
+    allowed_meta = {
+        str(len(evidence)),
+        *(str(item["id"]) for item in evidence if "id" in item),
+        *(re.findall(r"\d+", window)),
+    }
+    for number in re.findall(r"\b\d+(?:[.,]\d+)?\b", generated_text):
+        if number in corpus or number in allowed_meta:
+            continue
+        return True
+    return False
+
 
 def retrieve(session, query: str, limit=12, window="24h", now=None):
     from .scoring import WINDOWS
@@ -132,7 +154,19 @@ def answer_query(
             )
         )
     if profile:
-        return profile_answer(db, vault, profile, query, evidence, language, config.ai_enabled)
+        return profile_answer(
+            db,
+            vault,
+            profile,
+            query,
+            evidence,
+            language,
+            config.ai_enabled,
+            purpose=purpose,
+            prompt_template=prompt.template if prompt else "",
+            editorial_tone=config.editorial_tone,
+            window=window,
+        )
     if test_evidence is None and config.ai_enabled and key:
         with db.session() as session:
             evidence = permitted_evidence(session, evidence, "external")
@@ -148,16 +182,10 @@ def answer_query(
     context = json.dumps(
         {"query": query, "documents": evidence, "tone": config.editorial_tone}, ensure_ascii=False
     )
-    operation_instructions = {
-        "explain_score": "Explicá qué evidencia hay. No atribuyas puntuaciones que no figuren en el contexto.",
-        "disambiguate": "Contrastá hechos concretos y fechas; compartir una persona no implica el mismo hecho.",
-        "format_recommendation": "Presentá opciones al editor. No recomiendes un canal como superior: no hay analítica propia de rendimiento disponible.",
-        "daily_brief": "Prepará un briefing breve con acontecimientos, fuentes y límites del monitoreo.",
-    }
     instructions = (
         SYSTEM_PROMPT.replace("Respondé en español argentino.", "Respond in English." if language == "en" else "Respondé en español argentino.")
         + "\n"
-        + operation_instructions.get(purpose, "")
+        + OPERATION_INSTRUCTIONS.get(purpose, "")
         + ("\nInstrucciones editoriales subordinadas:\n" + prompt.template if prompt else "")
     )
     reservation = (
@@ -204,9 +232,7 @@ def answer_query(
         generated_urls = re.findall(r"https?://[^\s<>]+", parsed.answer)
         if any(url.rstrip(".,;)") not in allowed_urls for url in generated_urls):
             return respond(evidence, "Respuesta IA rechazada: enlace no respaldado")
-        corpus = json.dumps(evidence, ensure_ascii=False)
-        numbers = re.findall(r"\b\d+(?:[.,]\d+)?\b", parsed.answer)
-        if any(number not in corpus for number in numbers):
+        if has_unsupported_numbers(parsed.answer, evidence, window):
             return respond(evidence, "Respuesta IA rechazada: cifra no respaldada")
         from .security import audit, digest
 
@@ -234,7 +260,20 @@ def answer_query(
         return respond(evidence, "Proveedor IA no disponible; reserva de costo conservada")
 
 
-def profile_answer(db, vault, profile, query, evidence, language="en", enabled=True):
+def profile_answer(
+    db,
+    vault,
+    profile,
+    query,
+    evidence,
+    language="en",
+    enabled=True,
+    *,
+    purpose="answer_telegram",
+    prompt_template="",
+    editorial_tone="",
+    window="24h",
+):
     from .ai import INSTRUCTIONS, generate
 
     def unavailable(reason):
@@ -246,10 +285,18 @@ def profile_answer(db, vault, profile, query, evidence, language="en", enabled=T
 
     if not evidence or not enabled or not profile.enabled:
         return unavailable("Insufficient evidence or AI disabled" if language == "en" else "Evidencia insuficiente o IA desactivada")
+    extra_parts = [
+        "Respond in English." if language == "en" else "Respondé en español argentino.",
+        OPERATION_INSTRUCTIONS.get(purpose, ""),
+        f"Editorial tone: {editorial_tone}" if editorial_tone else "",
+        f"Subordinate editorial instructions:\n{prompt_template}" if prompt_template else "",
+    ]
+    full_instructions = INSTRUCTIONS + " ".join(part for part in extra_parts if part)
     try:
-        result, run_id = generate(db, vault, profile.id, 'answer', INSTRUCTIONS +
-                                 ("Respond in English." if language == "en" else "Respondé en español argentino."),
-                                 {'question': query, 'documents': evidence}, Answer)
+        result, run_id = generate(
+            db, vault, profile.id, 'answer', full_instructions,
+            {'question': query, 'documents': evidence}, Answer
+        )
         allowed = {item['id'] for item in evidence}
         if not result.citation_document_ids or not set(result.citation_document_ids) <= allowed:
             raise ValueError('invalid_citations')
@@ -257,8 +304,7 @@ def profile_answer(db, vault, profile, query, evidence, language="en", enabled=T
         generated_text = result.answer + ' ' + ' '.join(result.limitations) + ' ' + (result.suggested_action or '')
         if any(url.rstrip('.,;)') not in urls for url in re.findall(r'https?://[^\s<>]+', generated_text)):
             raise ValueError('invalid_urls')
-        corpus = json.dumps(evidence, ensure_ascii=False)
-        if any(number not in corpus for number in re.findall(r'\b\d+(?:[.,]\d+)?\b', generated_text)):
+        if has_unsupported_numbers(generated_text, evidence, window):
             raise ValueError('unsupported_numbers')
         return {**result.model_dump(), 'evidence': [item for item in evidence if item['id'] in result.citation_document_ids],
                 'mode': 'ai', 'ai_run_id': run_id}

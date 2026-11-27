@@ -64,7 +64,7 @@ class AgentInput(BaseModel):
     window: Literal['1h', '6h', '24h', '72h', '7d'] = '24h'
     topics: list[str] = Field(default_factory=list, max_length=50)
     source_ids: list[int] = Field(default_factory=list, max_length=100)
-    channel_id: str = Field(default='', pattern=r'^([CG][A-Z0-9]+)?$')
+    channel_id: str = Field(default='', pattern=r'^([CG][A-Z0-9]+|telegram|web)?$')
     profile_id: int | None = None
     max_items: int = Field(default=5, ge=1, le=10)
 
@@ -212,8 +212,16 @@ def install(app, db, vault, settings, require, render):
             if any(not session.get(Source, source_id) for source_id in payload.source_ids):
                 raise ValueError('Unknown source')
             config = slack_config(session)
-            if payload.enabled and (not config.get('enabled') or payload.channel_id not in config.get('channels', {})):
-                raise ValueError('Configure and enable an authorized Slack channel first.')
+            from .editorial import active_config
+            _, ed_config = active_config(session)
+            if payload.enabled:
+                if payload.channel_id == 'web':
+                    pass
+                elif payload.channel_id == 'telegram':
+                    if not ed_config.telegram_enabled:
+                        raise ValueError('Enable Telegram in Editorial criteria first.')
+                elif not config.get('enabled') or payload.channel_id not in config.get('channels', {}):
+                    raise ValueError('Configure and enable an authorized Slack channel, Telegram or Web destination first.')
             agent = session.get(EditorialAgent, identifier) if identifier else EditorialAgent()
             if not agent:
                 raise HTTPException(404)
@@ -255,10 +263,26 @@ def install(app, db, vault, settings, require, render):
 
     @app.get('/api/v1/editorial/followups')
     def followups(user=Depends(require('editor'))):
+        from .models import User
         with db.session() as session:
-            return [{**record(row), 'title': session.get(Event, row.event_id).label,
-                     'threads': [record(thread) for thread in session.scalars(select(SlackThread).where(SlackThread.event_id == row.event_id))]}
-                    for row in session.scalars(select(EditorialFollowup).order_by(EditorialFollowup.updated_at.desc()).limit(100))]
+            users = {u.id: u.email for u in session.scalars(select(User))}
+            return [
+                {
+                    **record(row),
+                    'title': (ev.label if (ev := session.get(Event, row.event_id)) else f'#{row.event_id}'),
+                    'owner_email': users.get(row.owner_id) if row.owner_id else None,
+                    'threads': [record(thread) for thread in session.scalars(select(SlackThread).where(SlackThread.event_id == row.event_id))],
+                }
+                for row in session.scalars(select(EditorialFollowup).order_by(EditorialFollowup.updated_at.desc()).limit(100))
+            ]
+
+    @app.get('/api/v1/editorial/recent-events')
+    def recent_events(user=Depends(require('editor'))):
+        with db.session() as session:
+            return [
+                {'id': e.id, 'label': e.label, 'topic': e.topic}
+                for e in session.scalars(select(Event).where(Event.status == 'active').order_by(Event.id.desc()).limit(60))
+            ]
 
     @app.post('/api/v1/editorial/followups/{event_id}')
     def action(event_id: int, payload: FollowInput, user=Depends(require('editor'))):

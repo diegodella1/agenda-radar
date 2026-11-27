@@ -145,8 +145,4 @@ Portada `/home`, acerca de `/about`, producto `/funcionalidades`, casos `/casos-
 
 ## Demo pública
 
-[Probar demo](https://aradar.diegodella.ar/demo/login): usuario `demo`, contraseña `demo`. Cliente ficticio con noticias, tendencias y perfiles reales; actualización periódica y cambios aislados por visitante. Ver [operación y límites](docs/DEMO.md) y [plan aprobado](docs/DEMO_PLAN.md).
-
-## Demo pública
-
 [Explorar la demo](https://aradar.diegodella.ar/demo/) sin registro: contenido ficticio, acciones locales y guías por función. [Operación de la demo](docs/DEMO.md).

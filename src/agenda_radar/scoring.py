@@ -1,4 +1,6 @@
+import copy
 import math
+import threading
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -13,6 +15,28 @@ from .schemas import EditorialConfig
 
 WINDOWS = {"1h": 3600, "6h": 21600, "24h": 86400, "72h": 259200, "7d": 604800}
 
+_COMPARE_CACHE_LOCK = threading.Lock()
+_COMPARE_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
+_COMPARE_CACHE_TTL = 15.0
+
+
+def _compare_watermark(session, window: str, config_version: int) -> tuple | None:
+    bind = session.get_bind()
+    url = str(getattr(bind, "url", ""))
+    if not url or ":memory:" in url:
+        return None
+    doc_sig = session.execute(select(func.count(Document.id), func.max(Document.id))).one()
+    mention_sig = session.execute(select(func.count(Mention.document_id), func.max(Mention.event_id))).one()
+    cov_sig = session.execute(select(func.count(OwnCoverage.id), func.max(OwnCoverage.id))).one()
+    src_sig = tuple(
+        (s.id, s.enabled, s.status, s.scope, s.weight, s.group_name, int(s.last_success or 0))
+        for s in session.scalars(select(Source).order_by(Source.id))
+    )
+    ev_sig = session.execute(
+        select(func.count(Event.id), func.sum(Event.status == "merged"))
+    ).one()
+    return (url, window, config_version, tuple(doc_sig), tuple(mention_sig), tuple(cov_sig), tuple(ev_sig), src_sig)
+
 
 def source_healthy(source: Source, now: float) -> bool:
     return bool(
@@ -24,10 +48,17 @@ def source_healthy(source: Source, now: float) -> bool:
 
 
 def compare(session, window="24h", config: EditorialConfig | None = None, now=None):
+    use_cache = config is None and now is None
     now = now or time.time()
     duration = WINDOWS[window]
     version, active = active_config(session)
     config = config or active
+    cache_key = _compare_watermark(session, window, version) if use_cache else None
+    if cache_key is not None:
+        with _COMPARE_CACHE_LOCK:
+            cached = _COMPARE_CACHE.get(cache_key)
+            if cached and now - cached[0] <= _COMPARE_CACHE_TTL:
+                return copy.deepcopy(cached[1])
     sources = list(session.scalars(select(Source).where(Source.enabled.is_(True))))
     source_by_id = {source.id: source for source in sources}
     reference_sources = [s for s in sources if s.scope == "reference"]
@@ -97,9 +128,10 @@ def compare(session, window="24h", config: EditorialConfig | None = None, now=No
         # Ownership comes from the configured publisher source, never an aggregator.
         group = source.group_name if source.kind != "google_news" else document.group_name
         row["reference"][group] = max(row["reference"].get(group, 0), weight * decay)
-        if stamp >= now - 7200:
+        vel_step = min(7200, duration / 2)
+        if stamp >= now - vel_step:
             row["recent"].add(group)
-        elif stamp >= now - 14400:
+        elif stamp >= now - 2 * vel_step:
             row["previous"].add(group)
     for coverage in session.scalars(
         select(OwnCoverage).where(
@@ -167,7 +199,11 @@ def compare(session, window="24h", config: EditorialConfig | None = None, now=No
                     term.lower() in event.label.lower() for term in config.review_terms
                 ),
                 "velocity": velocity,
-                "velocity_method": "2h_vs_previous_2h_unadjusted",
+                "velocity_method": (
+                    "2h_vs_previous_2h_unadjusted"
+                    if duration >= 14400
+                    else f"{int(duration // 120)}m_vs_previous_{int(duration // 120)}m_unadjusted"
+                ),
                 "source_ids": sorted(data["sources"]),
                 "editorial_multiplier": multiplier,
                 "editorial_affinity": affinity,
@@ -210,7 +246,7 @@ def compare(session, window="24h", config: EditorialConfig | None = None, now=No
         )
         row["delta_config_changed"] = bool(past and past.config_version != version)
     rows.sort(key=lambda row: row["priority"], reverse=True)
-    return {
+    result = {
         "window": window,
         "as_of": now,
         "unit": "share_of_observed_attention_pct",
@@ -229,6 +265,12 @@ def compare(session, window="24h", config: EditorialConfig | None = None, now=No
         + ["Velocidad heurística sin ajuste por franja horaria"],
         "rows": rows,
     }
+    if cache_key is not None:
+        with _COMPARE_CACHE_LOCK:
+            if len(_COMPARE_CACHE) > 32:
+                _COMPARE_CACHE.clear()
+            _COMPARE_CACHE[cache_key] = (now, copy.deepcopy(result))
+    return result
 
 
 def snapshot(session, window="24h", now=None):

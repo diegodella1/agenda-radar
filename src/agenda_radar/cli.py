@@ -24,11 +24,6 @@ def main():
     sub.add_parser("web")
     sub.add_parser("worker")
     sub.add_parser("collaboration-worker")
-    collector = sub.add_parser("demo-collect")
-    collector.add_argument("--once", action="store_true")
-    collector.add_argument("--discover", action="store_true")
-    collector.add_argument("--force", action="store_true")
-    sub.add_parser("demo-set-x")
     backup = sub.add_parser("backup")
     backup.add_argument("destination", type=Path)
     restore = sub.add_parser("restore")
@@ -37,31 +32,6 @@ def main():
     sub.add_parser("check")
     args = parser.parse_args()
     settings = Settings()
-    if args.command == "demo-set-x":
-        corpus = settings.demo_corpus_dir.resolve()
-        collector_db = Database(corpus / "collector.db")
-        collector_db.migrate()
-        collector_vault = Vault(corpus / "secrets")
-        collector_vault.initialize()
-        token = getpass.getpass("Token de X para el recolector de la demo: ").strip()
-        if not token:
-            raise SystemExit("Token vacío; no se modificó la credencial")
-        with collector_db.session() as session:
-            collector_vault.set(session, "x", token)
-        collector_db.engine.dispose()
-        print("Credencial aislada guardada. Ejecutar demo-collect --once --discover para verificarla.")
-        return
-    if args.command == "demo-collect":
-        import json
-
-        from .demo_corpus import collect_once, run
-
-        if args.once:
-            print(json.dumps(collect_once(settings.demo_corpus_dir, discover=args.discover,
-                                          force=args.force), ensure_ascii=False))
-        else:
-            run(settings.demo_corpus_dir)
-        return
     db = Database(settings.database_path)
     if args.command == "init":
         db.migrate()

@@ -54,24 +54,41 @@ def decide(session, user_id, event_id, action, reason='', key=None):
     audit(session, user_id, action, 'event', event_id)
 
 
-def evidence_for_event(session, event_id, source_ids=None):
+def agent_channel_kind(channel_id: str) -> str:
+    if channel_id == 'web':
+        return 'web'
+    if channel_id == 'telegram':
+        return 'telegram'
+    return 'slack'
+
+
+def evidence_for_event(session, event_id, source_ids=None, destination='external'):
     documents = session.scalars(select(Document).join(Mention).where(Mention.event_id == event_id).order_by(Document.observed_at.desc()).limit(40))
     items = [{'id': doc.id, 'title': doc.title, 'excerpt': doc.excerpt[:800], 'url': doc.canonical_url,
               'observed_at': doc.observed_at, 'hash': doc.content_hash} for doc in documents]
-    return permitted_evidence(session, items, 'external', source_ids)
+    return permitted_evidence(session, items, destination, source_ids)
 
 
 def build_preview(db, agent_id):
-    from .scoring import WINDOWS
+    from .scoring import WINDOWS, compare
     with db.session() as session:
         agent = session.get(EditorialAgent, agent_id)
         if not agent:
             raise ValueError('agent_not_found')
-        from .scoring import compare
+        channel_kind = agent_channel_kind(agent.channel_id)
+        destination = 'internal' if channel_kind == 'web' else 'external'
         ranking = {row['event_id']: row['priority'] for row in compare(session, agent.window)['rows']}
         since = time.time() - WINDOWS[agent.window]
-        events = list(session.scalars(select(Event).where(Event.status == 'active').order_by(Event.id.desc()).limit(200)))
-        events.sort(key=lambda event: ranking.get(event.id, 0), reverse=True)
+        ranked_ids = sorted(ranking, key=lambda eid: ranking[eid], reverse=True)[:200]
+        events_by_id = {
+            event.id: event
+            for event in session.scalars(
+                select(Event).where(Event.status == 'active', Event.id.in_(ranked_ids))
+            )
+        } if ranked_ids else {}
+        for event in session.scalars(select(Event).where(Event.status == 'active').order_by(Event.id.desc()).limit(200)):
+            events_by_id.setdefault(event.id, event)
+        events = sorted(events_by_id.values(), key=lambda event: (ranking.get(event.id, 0), event.id), reverse=True)
         alerts = set(session.scalars(select(Alert.event_id).where(Alert.at >= since)))
         items = []
         for event in events:
@@ -84,7 +101,7 @@ def build_preview(db, agent_id):
                 continue
             if agent.kind == 'followup' and (not follow or follow.status != 'following'):
                 continue
-            evidence = [item for item in evidence_for_event(session, event.id, agent.source_ids) if item['observed_at'] >= since]
+            evidence = [item for item in evidence_for_event(session, event.id, agent.source_ids, destination=destination) if item['observed_at'] >= since]
             if not evidence:
                 continue
             signature = hashlib.sha256(json.dumps([(item['id'], item['hash']) for item in evidence], sort_keys=True).encode()).hexdigest()
@@ -96,9 +113,29 @@ def build_preview(db, agent_id):
                           'owner_id': follow.owner_id if follow else None})
             if len(items) >= agent.max_items:
                 break
+        notice = (
+            'Internal workspace preview: includes authorized internal sources.'
+            if channel_kind == 'web' and agent.language == 'en'
+            else 'Vista interna del espacio de trabajo: incluye fuentes internas habilitadas.'
+            if channel_kind == 'web'
+            else 'Only sources explicitly allowed for external sharing are included.'
+            if agent.language == 'en'
+            else 'Solo se incluyen fuentes autorizadas para compartir externamente.'
+        )
         return {'agent_id': agent.id, 'kind': agent.kind, 'language': agent.language,
-                'preview': True, 'as_of': time.time(), 'window': agent.window, 'items': items,
-                'notice': 'Only sources explicitly allowed for external sharing are included.' if agent.language == 'en' else 'Solo se incluyen fuentes autorizadas para compartir externamente.'}
+                'channel': channel_kind, 'preview': True, 'as_of': time.time(),
+                'window': agent.window, 'items': items, 'notice': notice}
+
+
+def _delivery_allowed(agent, config, slack_conn) -> bool:
+    if not agent.enabled:
+        return False
+    kind = agent_channel_kind(agent.channel_id)
+    if kind == 'web':
+        return True
+    if kind == 'telegram':
+        return bool(config.telegram_enabled)
+    return bool(slack_conn.get('enabled') and agent.channel_id in slack_conn.get('channels', {}))
 
 
 def run_agent(db, vault, agent_id, preview=True):
@@ -110,45 +147,58 @@ def run_agent(db, vault, agent_id, preview=True):
         profile = session.get(AIProfile, agent.profile_id) if agent.profile_id else None
         _, config = active_config(session)
         connection = slack_config(session)
-        if not preview and (not agent.enabled or not connection.get('enabled') or agent.channel_id not in connection.get('channels', {})):
+        if not preview and not _delivery_allowed(agent, config, connection):
             raise ValueError('agent_delivery_disabled')
     if profile and config.ai_enabled:
         for item in result['items']:
-            answer = profile_answer(db, vault, profile, 'Summarize the new evidence and its limitations.',
-                                    item['evidence'], agent.language)
+            answer = profile_answer(
+                db, vault, profile, 'Summarize the new evidence and its limitations.',
+                item['evidence'], agent.language, purpose='daily_brief',
+                editorial_tone=config.editorial_tone, window=agent.window,
+            )
             item['summary'] = answer['answer']
             item['mode'] = answer['mode']
     result['preview'] = preview
     with db.session() as session:
         agent = session.get(EditorialAgent, agent_id)
+        _, config = active_config(session)
         connection = slack_config(session)
-        if not preview and (not agent.enabled or not connection.get('enabled') or agent.channel_id not in connection.get('channels', {})):
+        if not preview and not _delivery_allowed(agent, config, connection):
             raise ValueError('agent_delivery_disabled')
         session.add(AgentRun(agent_id=agent.id, preview=preview, result=result))
         if preview:
             return result
         state = dict(agent.state)
+        channel_kind = agent_channel_kind(agent.channel_id)
         if agent.kind == 'briefing':
             state['_briefing_day'] = datetime.now(ZoneInfo(agent.timezone)).date().isoformat()
         for item in result['items']:
             day = datetime.now(ZoneInfo(agent.timezone)).date().isoformat() if agent.kind == 'briefing' else ''
             key = f"agent:{agent.id}:{item['event_id']}:{item['signature']}:{day}"
             session.execute(insert(ChannelDelivery).values(
-                dedupe_key=key, destination=agent.channel_id, event_id=item['event_id'],
-                payload=item, expires_at=time.time()+21600).on_conflict_do_nothing())
+                dedupe_key=key,
+                channel=channel_kind,
+                destination=agent.channel_id or 'web',
+                event_id=item['event_id'],
+                payload=item,
+                status='sent' if channel_kind == 'web' else 'pending',
+                expires_at=time.time() + 21600,
+            ).on_conflict_do_nothing())
             state[str(item['event_id'])] = item['signature']
         agent.state = state
     return result
 
 
 def due_agents(db):
+    from .editorial import active_config
     now = time.time()
     with db.session() as session:
-        config = slack_config(session)
-        if not config.get('enabled'):
-            return []
+        slack_conn = slack_config(session)
+        _, config = active_config(session)
         result = []
         for agent in session.scalars(select(EditorialAgent).where(EditorialAgent.enabled.is_(True), EditorialAgent.next_run <= now)):
+            if not _delivery_allowed(agent, config, slack_conn):
+                continue
             local = datetime.now(ZoneInfo(agent.timezone))
             if agent.kind == 'briefing' and (local.hour < agent.hour or agent.state.get('_briefing_day') == local.date().isoformat()):
                 continue

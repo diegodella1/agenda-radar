@@ -31,10 +31,10 @@ def test_demo_assets_without_creating_visit(app):
     settings = app.state.settings.model_copy(update={'demo_enabled': True})
     demo_app = create_app(settings)
     with TestClient(demo_app) as client:
-        login = client.get('/demo/login')
-        assert login.status_code == 200
-        assert f'/demo/static/app.js?v={ASSET_VERSIONS["app.js"]}' in login.text
-        response = client.get(f'/demo/static/app.js?v={ASSET_VERSIONS["app.js"]}')
+        showcase = client.get('/demo/')
+        assert showcase.status_code == 200
+        assert f'/static/showcase.js?v={ASSET_VERSIONS["showcase.js"]}' in showcase.text
+        response = client.get(f'/static/showcase.js?v={ASSET_VERSIONS["showcase.js"]}')
         assert response.status_code == 200
         assert 'immutable' in response.headers['cache-control']
         assert not response.cookies
