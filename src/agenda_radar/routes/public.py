@@ -30,24 +30,24 @@ class SetupInput(LoginInput):
 
 PUBLIC_PAGE_META = {
     "home": (
-        "Monitoreo y colaboración para redacciones",
-        "Compará coberturas, prepará briefings y seguí historias con agentes editoriales, Slack e IA opcional. Explorá la demo sin registro.",
+        "Agenda editorial y monitoreo para redacciones",
+        "Dejá de revisar 40 pestañas antes de la reunión de pauta. Detectá brechas de cobertura, coordiná en Slack o Telegram y elegí OpenAI, Claude o IA local.",
     ),
     "about": (
-        "Tecnología al servicio del criterio editorial",
-        "Conocé el enfoque de Agenda Radar: evidencia trazable, decisiones humanas, una instalación por redacción y elección del proveedor de IA.",
+        "Criterio editorial humano, evidencia trazable",
+        "Por qué construimos Agenda Radar: una plataforma self-hosted por redacción que conecta fuentes, brechas de agenda y seguimiento entre turnos.",
     ),
     "funcionalidades": (
-        "Agentes editoriales, Slack e IA empresarial",
-        "Explorá comparación de cobertura, agentes de vigilancia y briefing, seguimiento con responsables y modelos de OpenAI, Claude o tu red interna.",
+        "Agrupamiento, brechas, agentes, Slack, Telegram e IA",
+        "Conocé cómo Agenda Radar agrupa noticias por acontecimiento, compara cobertura propia vs referencias y lleva alertas y briefings a Slack, Telegram o Web.",
     ),
     "casos-de-uso": (
-        "Seis flujos de trabajo para redacciones",
-        "Del briefing de la mañana al seguimiento en Slack y la IA empresarial: seis formas de trabajar con evidencia y decisiones en Agenda Radar.",
+        "Seis beneficios concretos para tu redacción",
+        "Del pase de pauta en 10 minutos al seguimiento entre turnos y la IA local sin salida a la nube: seis escenarios reales para redacciones.",
     ),
     "roadmap": (
-        "Agentes y colaboración para tu redacción",
-        "Detectá historias, prepará briefings y coordiná el seguimiento en Slack. Conocé los agentes editoriales y elegí IA en la nube o en tu red empresarial.",
+        "Para tu redacción: agentes, canales y puesta en marcha",
+        "Activá packs de fuentes, delegá vigilancia y briefing en tres agentes editoriales y coordiná decisiones en Slack, Telegram o Web.",
     ),
 }
 

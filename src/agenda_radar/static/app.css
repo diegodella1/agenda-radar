@@ -41,33 +41,16 @@ body{font-size:15px;font-weight:400}h1,h2,h3{font-weight:600}button,.button{font
 @media(max-width:900px){.criteria-rule{grid-template-columns:1fr}.criteria-rule>button{justify-self:start}.criteria-topic{grid-template-columns:1fr}.criteria-topic button{justify-self:start}}
 @media(max-width:480px){.criteria-add{align-items:stretch;flex-direction:column}.criteria-actions{flex-direction:column}.criteria-weight{grid-template-columns:minmax(0,1fr) 78px}.criteria-rule{padding:12px}.criteria-steps{flex-direction:column;gap:8px}.criteria-comparison{grid-template-columns:58px minmax(0,1fr) 52px;gap:6px}}
 
-/* Guided demo: the native dialog keeps background controls inert. */
-.tour-open{overflow:hidden;scroll-behavior:auto}
-.tour-open body{padding-bottom:100vh}
-.tour-dialog{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;background:transparent;color:var(--ink);overflow:hidden}
-.tour-dialog::backdrop{background:transparent}
-.tour-dialog::before{content:"";position:absolute;inset:0;background:rgb(18 33 57 / 65%)}
-.tour-dialog.has-target::before{background:transparent}
-.tour-spotlight{position:absolute;border:2px solid #7ca7ff;border-radius:10px;box-shadow:0 0 0 100vmax rgb(18 33 57 / 65%);pointer-events:none}
-.tour-card{position:absolute;z-index:1;width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;box-shadow:0 20px 64px rgb(18 33 57 / 30%)}
-.tour-topline{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.tour-topline .eyebrow{margin:0;font-size:11px;letter-spacing:.8px;color:var(--muted)}
-.tour-topline button{padding:8px;font-size:13px;min-height:44px}
-.tour-progress{height:4px;border-radius:4px;background:var(--line);margin:8px 0 20px;overflow:hidden}
-.tour-progress span{display:block;height:100%;background:var(--dark);transition:width .18s ease}
-.tour-card h2{font-size:26px;line-height:1.2;letter-spacing:-.5px;margin:0 0 16px;outline:none}
-.tour-card p{font-size:15px;line-height:1.55;margin:0 0 16px}
-.tour-card #tour-note{font-size:13px}
-.tour-controls{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:24px}
-.tour-controls button{font-size:14px;padding:10px 14px}
-.tour-controls [data-tour-next]{margin-left:auto}
-.tour-checklist{list-style:none;padding:0;margin:20px 0;font-size:14px}
-.tour-checklist li{padding:10px 0;border-bottom:1px solid var(--line)}
-.tour-checklist .is-ready{color:var(--dark)}
-.tour-checklist .is-pending{color:var(--muted)}
-.tour-dialog [hidden]{display:none!important}
-@media(max-width:759px){.tour-card{padding:20px}.tour-card h2{font-size:22px}.tour-card p{font-size:14px}.tour-controls{margin-top:18px;flex-wrap:wrap}.tour-controls button{padding:10px 12px}.tour-progress{margin-bottom:16px}}
-@media(prefers-reduced-motion:reduce){.tour-progress span{transition:none}}
+/* Radar card visual polish and scannability */
+.radar-legend{font-size:12px;color:var(--muted);margin:6px 0 14px}
+.card-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.card-top .eyebrow{margin:0}
+.card-top .coverage-state{margin:0}
+.coverage-state.uncovered{color:#9a3c12;border-color:#efc7b2;background:#fff3ec}
+.card-meta{font-size:13px;color:var(--muted);margin:10px 0 4px}
+.card-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;flex-wrap:wrap}
+.priority-card{transition:border-color .16s ease,box-shadow .16s ease}
+.priority-card:hover{border-color:#b6c8e6;box-shadow:0 8px 24px rgb(18 33 57 / 7%)}
 
 #notice:not([hidden]){position:fixed;bottom:16px;right:16px;z-index:1000;width:min(440px,calc(100vw - 32px));max-height:35vh;overflow:auto;box-shadow:0 6px 24px #18283f33;margin:0}
 .criteria-loading{min-height:100vh}

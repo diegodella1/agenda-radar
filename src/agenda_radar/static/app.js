@@ -101,7 +101,8 @@ document.addEventListener('click',async event=>{
   const button=event.target.closest('[data-action],[data-post]');if (!button || button.disabled) return;
   button.disabled=true;
   try {
-    if (button.dataset.post) {const result=await api(button.dataset.post,{});if(result.job_id)displayResult(await jobResult(result.job_id));else location.reload();}
+    if (button.hasAttribute('data-follow-quick')) {await api(button.dataset.post,{action:'follow',reason:''});notice(window.RadarI18n.t('Historia agregada a seguimiento.'));}
+    else if (button.dataset.post) {const result=await api(button.dataset.post,{});if(result.job_id)displayResult(await jobResult(result.job_id));else location.reload();}
     else if(button.dataset.action==='logout'){await api('/api/v1/auth/logout',{});location.href=appUrl('/login');}
     else if(button.dataset.action==='pair'){const result=await api('/api/v1/telegram/pair',{});notice(window.RadarI18n.t('Enviá al bot este comando dentro de 10 minutos: {command}',{command:result.command}));}
     else if(button.dataset.action==='test-source'){const data=payload(document.querySelector('#source-form'));const result=await api('/api/v1/admin/sources/test',data);displayResult(await jobResult(result.job_id));}

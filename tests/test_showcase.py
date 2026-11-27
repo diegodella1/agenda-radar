@@ -31,10 +31,10 @@ def test_locale_default_switch_persistence_and_invalid_values(app):
     with TestClient(app) as client:
         english = client.get("/home")
         assert '<html lang="en"' in english.text
-        assert "Spot gaps in your news coverage." in english.text
+        assert "Stop scanning 40 tabs before the morning meeting." in english.text
         spanish = client.get("/home?lang=es")
         assert '<html lang="es"' in spanish.text
-        assert "Detectá brechas de cobertura." in spanish.text
+        assert "Dejá de revisar 40 pestañas antes de la reunión de pauta." in spanish.text
         assert client.cookies["radar_lang"] == "es"
         assert 'lang="es"' in client.get("/login").text
         assert 'lang="es"' in client.get("/home?lang=xx").text
