@@ -77,7 +77,7 @@ class Vault:
         return Fernet(self.path.read_bytes())
 
     def set(self, session, name, value):
-        if name not in ("openai", "telegram", "x"):
+        if name not in ("openai", "telegram", "x", "slack_bot", "slack_app") and not (name.startswith("ai:") and name[3:].isdigit()):
             raise ValueError("Proveedor inválido")
         session.merge(Secret(name=name, encrypted=self.cipher().encrypt(value.encode()).decode()))
 

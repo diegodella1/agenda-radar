@@ -1,0 +1,71 @@
+import assert from 'node:assert/strict';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const base=process.env.SMOKE_BASE_URL || 'http://127.0.0.1:8791';
+const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
+try {
+  const context=await browser.newContext();
+  const headers={'X-Requested-With':'AgendaRadar'};
+  let login;
+  const deadline=Date.now()+180000;
+  do {
+    login=await context.request.post(base+'/demo/api/v1/auth/login',{headers,data:{email:'demo',password:'demo'}});
+    if(login.status()===202)await new Promise(resolve=>setTimeout(resolve,500));
+  } while(login.status()===202 && Date.now()<deadline);
+  assert.equal(login.status(),200);
+  const page=await context.newPage();
+  page.setDefaultTimeout(60000);
+  const errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(base+'/demo/admin/config');
+  await page.waitForFunction(()=>window.configEditor);
+  assert.equal(await page.getByLabel('Agregar en Fuentes de referencia',{exact:true}).count(),0);
+  assert.equal(await page.evaluate(()=>performance.getEntriesByType('resource').some(r=>/\/(onboarding|help|jobs)\.js/.test(r.name))),false);
+  const entry=page.getByLabel('Agregar en Prioridad por tema',{exact:true});
+  await entry.fill('performance-retained');
+  await page.locator('.criteria-dictionary').filter({has:entry}).getByRole('button',{name:'Agregar ajuste',exact:true}).click();
+  await page.evaluate(()=>{window.retainedControl=document.querySelector('.criteria-rule input');});
+  await entry.fill('performance-test');
+  await page.locator('.criteria-dictionary').filter({has:entry}).getByRole('button',{name:'Agregar ajuste',exact:true}).click();
+  assert.equal(await page.evaluate(()=>retainedControl===document.querySelector('.criteria-rule input')),true);
+  await page.getByRole('button',{name:'Quitar ajuste de performance-test',exact:true}).click();
+  assert.equal(await page.evaluate(()=>retainedControl===document.querySelector('.criteria-rule input')),true);
+  await page.getByText('02 · Peso de las fuentes',{exact:true}).click();
+  await page.getByLabel('Agregar en Fuentes de referencia',{exact:true}).waitFor();
+  let requests=0;
+  await page.route('**/api/v1/performance-read',async route=>{
+    requests++;
+    await new Promise(resolve=>setTimeout(resolve,100));
+    await route.fulfill({json:{value:requests}});
+  });
+  const values=await page.evaluate(()=>Promise.all([api('/api/v1/performance-read',undefined,'GET'),api('/api/v1/performance-read',undefined,'GET')]));
+  assert.equal(requests,1);
+  assert.deepEqual(values,[{value:1},{value:1}]);
+  await page.evaluate(()=>api('/api/v1/performance-read',undefined,'GET'));
+  assert.equal(requests,2,'Completed reads must not hide newer server data');
+  let failures=0;
+  await page.route('**/api/v1/performance-error',route=>{failures++;return route.fulfill({status:503,json:{detail:'Retry'}});});
+  await page.evaluate(async()=>{for(let i=0;i<2;i++)await api('/api/v1/performance-error',undefined,'GET').catch(()=>{});});
+  assert.equal(failures,2,'Failed reads must be retryable');
+  let writes=0;
+  await page.route('**/api/v1/performance-write',async route=>{
+    writes++;await new Promise(resolve=>setTimeout(resolve,100));
+    await route.fulfill({status:503,json:{detail:'Test failure'}});
+  });
+  await page.evaluate(()=>{
+    const form=document.createElement('form');form.dataset.endpoint='/api/v1/performance-write';
+    form.id='performance-form';document.body.append(form);
+    form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+    form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+  });
+  await page.waitForFunction(()=>!document.querySelector('#performance-form').dataset.pending);
+  assert.equal(writes,1);
+  const beforeNotice=await page.locator('h1').boundingBox();
+  await page.evaluate(()=>notice('Performance notification'));
+  assert.deepEqual(await page.locator('h1').boundingBox(),beforeNotice);
+  await page.getByRole('button',{name:'Cerrar aviso',exact:true}).click();
+  assert.equal(await page.locator('#notice').isVisible(),false);
+  await page.locator('.header-help').click();
+  await page.locator('#demo-tour[open]').waitFor();
+  assert.deepEqual(errors,[]);
+  console.log('PASS: lazy sections/features, stable rows, GET sharing, error retry, duplicate submit and lazy tutorial.');
+} finally {await browser.close();}

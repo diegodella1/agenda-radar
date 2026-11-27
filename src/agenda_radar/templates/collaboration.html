@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% macro t(en, es) %}{{ es if language == 'es' else en }}{% endmacro %}
+{% block content %}
+<link rel="stylesheet" href="{{ asset_url('collaboration.css') }}">
+<script src="{{ asset_url('collaboration.js') }}" defer></script>
+<div id="collaboration" data-role="{{ user.role }}">
+<p class="eyebrow">{{ t('Editorial teamwork', 'Trabajo editorial') }}</p>
+<h1>{{ t('Agents & collaboration', 'Agentes y colaboración') }}</h1>
+<p>{{ t('Review signals, keep decisions human, and connect your newsroom’s tools.', 'Revisá señales, conservá las decisiones humanas y conectá las herramientas de tu redacción.') }}</p>
+<p class="caveat">{{ t('Connections start disabled. Preview before sending. Private-model failures never switch to a cloud provider.', 'Las conexiones empiezan desactivadas. Previsualizá antes de enviar. Una falla del modelo privado nunca deriva a un proveedor externo.') }}</p>
+<div id="collab-notice" role="status" aria-live="polite"></div>
+<section class="collab-card"><h2>{{ t('Editorial follow-up', 'Seguimiento editorial') }}</h2><button type="button" id="slack-pair">{{ t('Link my Slack account', 'Vincular mi cuenta de Slack') }}</button><p id="pair-code"></p><div id="followups"></div><form id="follow-form"></form></section>
+{% if roles[user.role] >= 3 %}
+<section class="collab-card"><h2>{{ t('Editorial agents', 'Agentes editoriales') }}</h2><div id="agent-list"></div><form id="agent-form"></form><div id="agent-preview" aria-live="polite"></div></section>
+<section class="collab-card"><h2>{{ t('Source sharing policy', 'Política de salida por fuente') }}</h2><p>{{ t('Internal is the default. External permits source evidence in Slack and cloud AI. Internal notes are never included.', 'Interna es la opción predeterminada. Externa permite enviar evidencia de esa fuente a Slack y a IA en la nube. Las notas internas nunca se incluyen.') }}</p><div id="source-policies"></div></section>
+{% endif %}
+{% if user.role == 'superadmin' %}
+<section class="collab-card"><h2>{{ t('AI connections', 'Conexiones de IA') }}</h2><div id="profile-list"></div><form id="profile-form"></form><p>{{ t('Your server administrator must allow internal hosts. Enable AI in Editorial criteria before real analysis runs.', 'El administrador del servidor debe autorizar los hosts internos. Activá IA en Criterios editoriales antes de ejecutar análisis reales.') }}</p><h3>{{ t('Models by task', 'Modelos por tarea') }}</h3><form id="routing-form"></form></section>
+<section class="collab-card"><h2>Slack</h2><form id="slack-form"></form><button type="button" id="slack-test">{{ t('Test workspace access', 'Probar acceso al espacio') }}</button></section>
+{% endif %}
+{% if roles[user.role] >= 3 %}<section class="collab-card"><h2>{{ t('Activity and delivery', 'Actividad y entregas') }}</h2><button type="button" id="refresh-status">{{ t('Refresh', 'Actualizar') }}</button><div id="collab-status"></div></section>{% endif %}
+</div>
+{% endblock %}

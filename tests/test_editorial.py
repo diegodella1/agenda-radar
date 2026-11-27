@@ -51,6 +51,30 @@ def test_dedupe_preserves_publishers_and_versions(app):
         assert session.get(Mention, first.id)
 
 
+def test_clustering_skips_candidates_that_cannot_reach_threshold(app, monkeypatch):
+    import agenda_radar.ingest as ingest
+
+    with app.state.db.session() as session:
+        publisher = source(session, "threshold")
+        first = store_document(session, publisher, document("threshold"))
+        first_event = session.get(Mention, first.id).event_id
+        original = ingest.SequenceMatcher
+        calls = []
+
+        def matcher(*args):
+            calls.append(args)
+            return original(*args)
+
+        monkeypatch.setattr(ingest, "SequenceMatcher", matcher)
+        unrelated = store_document(session, publisher, document(
+            "threshold", "Congreso internacional presenta avances científicos sobre astronomía", "other"))
+        assert session.get(Mention, unrelated.id).event_id != first_event
+        assert not calls
+        duplicate = store_document(session, publisher, document("threshold", path="same-topic"))
+        assert session.get(Mention, duplicate.id).event_id == first_event
+        assert calls
+
+
 def test_same_owner_counts_once(app):
     with app.state.db.session() as session:
         for name in ["a", "b", "c", "d"]:

@@ -17,7 +17,7 @@ def enqueue(db: Database, kind: str, payload: dict, key: str, user_id=None) -> i
         return session.scalar(select(Job.id).where(Job.idempotency_key == key))
 
 
-def claim(db: Database, owner: str, now=None, lease_seconds=300) -> Job | None:
+def claim(db: Database, owner: str, now=None, lease_seconds=300, *, kinds=None, exclude_kinds=()) -> Job | None:
     from .editorial import active_config
 
     now = time.time() if now is None else now
@@ -27,6 +27,8 @@ def claim(db: Database, owner: str, now=None, lease_seconds=300) -> Job | None:
         job = session.scalar(
             select(Job)
             .where(
+                Job.kind.in_(kinds) if kinds is not None else true(),
+                Job.kind.not_in(exclude_kinds) if exclude_kinds else true(),
                 Job.kind.not_in(["poll", "enrich"]) if not config.run_enabled else true(),
                 or_(
                     (Job.status == "pending") & (Job.run_after <= now),

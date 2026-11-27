@@ -40,6 +40,7 @@ def retrieve(session, query: str, limit=12, window="24h", now=None):
             "excerpt": document.excerpt[:800],
             "url": document.canonical_url,
             "observed_at": document.observed_at,
+            "hash": document.content_hash,
         }
         for doc_id in ids
         if (document := session.get(Document, doc_id))
@@ -60,6 +61,21 @@ def fallback(evidence, reason):
     }
 
 
+def localized_fallback(evidence, reason, language):
+    result = fallback(evidence, reason)
+    if language == 'en':
+        reasons = {
+            'Consulta fuera del corpus disponible': 'No matching evidence in the available corpus.',
+            'Análisis IA deshabilitado': 'AI analysis is disabled.',
+            'Presupuesto IA agotado': 'AI budget exhausted.',
+            'Configurar modelo y tarifas antes de usar IA': 'Configure model and pricing before using AI.',
+        }
+        result.update(answer='Review these monitored publications.' if evidence else 'No matching evidence found in monitored sources.',
+                      limitations=[reasons.get(reason, 'AI unavailable or answer rejected; original evidence retained.')],
+                      suggested_action='Review the original sources.')
+    return result
+
+
 def reserve_budget(db, config, operation, model, amount):
     now = datetime.now(timezone.utc)
     daily = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
@@ -67,13 +83,17 @@ def reserve_budget(db, config, operation, model, amount):
     with db.session() as session:
         session.execute(text("BEGIN IMMEDIATE"))
         usage = list(session.scalars(select(APIUsage).where(APIUsage.at >= monthly)))
+        from .collaboration_models import AIRun
+        provider_usage = list(session.scalars(select(AIRun).where(AIRun.at >= monthly)))
+        provider_monthly = sum(row.cost_usd if row.cost_usd is not None else (row.reserved_usd or 0) for row in provider_usage)
+        provider_daily = sum(row.cost_usd if row.cost_usd is not None else (row.reserved_usd or 0) for row in provider_usage if row.at >= daily)
 
         def cost(row):
             return row.cost_usd if row.status == "completed" else row.reserved_usd
 
         if (
-            sum(cost(row) for row in usage) + amount > config.monthly_budget_usd
-            or sum(cost(row) for row in usage if row.at >= daily) + amount > config.daily_budget_usd
+            sum(cost(row) for row in usage) + provider_monthly + amount > config.monthly_budget_usd
+            or sum(cost(row) for row in usage if row.at >= daily) + provider_daily + amount > config.daily_budget_usd
         ):
             raise ValueError("budget_exhausted")
         row = APIUsage(operation=operation, model=model, reserved_usd=amount)
@@ -83,13 +103,24 @@ def reserve_budget(db, config, operation, model, amount):
 
 
 def answer_query(
-    db, vault, query, prompt_id=None, window="24h", purpose="answer_telegram", *, test_evidence=None
+    db, vault, query, prompt_id=None, window="24h", purpose="answer_telegram", *, test_evidence=None,
+    language="en", destination="internal", profile_id=None
 ):
+    def respond(evidence, reason):
+        return localized_fallback(evidence, reason, language)
+
+    from .ai import selected_profile
+    from .collaboration_models import AIProfile
+    from .data_policy import permitted_evidence
+
     with db.session() as session:
         _, config = active_config(session)
         evidence = (
             test_evidence if test_evidence is not None else retrieve(session, query, window=window)
         )
+        profile = session.get(AIProfile, profile_id) if profile_id else selected_profile(session, purpose)
+        if destination == "external" or (profile and profile.network == "external"):
+            evidence = permitted_evidence(session, evidence, "external")
         key = vault.get(session, "openai")
         prompt = (
             session.get(Prompt, prompt_id)
@@ -100,15 +131,20 @@ def answer_query(
                 .order_by(Prompt.id.desc())
             )
         )
+    if profile:
+        return profile_answer(db, vault, profile, query, evidence, language, config.ai_enabled)
+    if test_evidence is None and config.ai_enabled and key:
+        with db.session() as session:
+            evidence = permitted_evidence(session, evidence, "external")
     if not evidence:
-        return fallback([], "Consulta fuera del corpus disponible")
+        return respond([], "Consulta fuera del corpus disponible")
     if not config.ai_enabled or not key:
-        return fallback(evidence, "Análisis IA deshabilitado")
+        return respond(evidence, "Análisis IA deshabilitado")
     model = prompt.model if prompt else config.ai_model
     if model != config.ai_model:
-        return fallback(evidence, "Configurar tarifas del modelo elegido antes de probar el prompt")
+        return respond(evidence, "Configurar tarifas del modelo elegido antes de probar el prompt")
     if not model or config.ai_input_usd_million <= 0 or config.ai_output_usd_million <= 0:
-        return fallback(evidence, "Configurar modelo y tarifas antes de usar IA")
+        return respond(evidence, "Configurar modelo y tarifas antes de usar IA")
     context = json.dumps(
         {"query": query, "documents": evidence, "tone": config.editorial_tone}, ensure_ascii=False
     )
@@ -119,7 +155,7 @@ def answer_query(
         "daily_brief": "Prepará un briefing breve con acontecimientos, fuentes y límites del monitoreo.",
     }
     instructions = (
-        SYSTEM_PROMPT
+        SYSTEM_PROMPT.replace("Respondé en español argentino.", "Respond in English." if language == "en" else "Respondé en español argentino.")
         + "\n"
         + operation_instructions.get(purpose, "")
         + ("\nInstrucciones editoriales subordinadas:\n" + prompt.template if prompt else "")
@@ -131,7 +167,7 @@ def answer_query(
     try:
         usage_id = reserve_budget(db, config, "answer", model, reservation)
     except ValueError:
-        return fallback(evidence, "Presupuesto IA agotado")
+        return respond(evidence, "Presupuesto IA agotado")
     try:
         from openai import OpenAI
 
@@ -161,17 +197,17 @@ def answer_query(
             or not parsed.citation_document_ids
             or not set(parsed.citation_document_ids) <= allowed
         ):
-            return fallback(
+            return respond(
                 evidence, "Respuesta IA rechazada: citas inválidas o respuesta incompleta"
             )
         allowed_urls = {item["url"] for item in evidence}
         generated_urls = re.findall(r"https?://[^\s<>]+", parsed.answer)
         if any(url.rstrip(".,;)") not in allowed_urls for url in generated_urls):
-            return fallback(evidence, "Respuesta IA rechazada: enlace no respaldado")
+            return respond(evidence, "Respuesta IA rechazada: enlace no respaldado")
         corpus = json.dumps(evidence, ensure_ascii=False)
         numbers = re.findall(r"\b\d+(?:[.,]\d+)?\b", parsed.answer)
         if any(number not in corpus for number in numbers):
-            return fallback(evidence, "Respuesta IA rechazada: cifra no respaldada")
+            return respond(evidence, "Respuesta IA rechazada: cifra no respaldada")
         from .security import audit, digest
 
         with db.session() as session:
@@ -195,4 +231,36 @@ def answer_query(
         }
     except Exception:
         # Keep reservation on ambiguous failures: provider may have consumed tokens.
-        return fallback(evidence, "Proveedor IA no disponible; reserva de costo conservada")
+        return respond(evidence, "Proveedor IA no disponible; reserva de costo conservada")
+
+
+def profile_answer(db, vault, profile, query, evidence, language="en", enabled=True):
+    from .ai import INSTRUCTIONS, generate
+
+    def unavailable(reason):
+        result = fallback(evidence, reason)
+        if language == "en":
+            result.update(answer="Review these monitored publications." if evidence else "No eligible evidence found in monitored sources.",
+                          limitations=[reason], suggested_action="Review the original sources.")
+        return result
+
+    if not evidence or not enabled or not profile.enabled:
+        return unavailable("Insufficient evidence or AI disabled" if language == "en" else "Evidencia insuficiente o IA desactivada")
+    try:
+        result, run_id = generate(db, vault, profile.id, 'answer', INSTRUCTIONS +
+                                 ("Respond in English." if language == "en" else "Respondé en español argentino."),
+                                 {'question': query, 'documents': evidence}, Answer)
+        allowed = {item['id'] for item in evidence}
+        if not result.citation_document_ids or not set(result.citation_document_ids) <= allowed:
+            raise ValueError('invalid_citations')
+        urls = {item['url'] for item in evidence}
+        generated_text = result.answer + ' ' + ' '.join(result.limitations) + ' ' + (result.suggested_action or '')
+        if any(url.rstrip('.,;)') not in urls for url in re.findall(r'https?://[^\s<>]+', generated_text)):
+            raise ValueError('invalid_urls')
+        corpus = json.dumps(evidence, ensure_ascii=False)
+        if any(number not in corpus for number in re.findall(r'\b\d+(?:[.,]\d+)?\b', generated_text)):
+            raise ValueError('unsupported_numbers')
+        return {**result.model_dump(), 'evidence': [item for item in evidence if item['id'] in result.citation_document_ids],
+                'mode': 'ai', 'ai_run_id': run_id}
+    except ValueError:
+        return unavailable("AI unavailable or unsupported answer; original evidence retained." if language == "en" else "IA no disponible o respuesta sin respaldo; se conserva la evidencia original.")

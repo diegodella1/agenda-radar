@@ -41,6 +41,9 @@ def public_addresses(url: str) -> tuple[str, int, list[str]]:
         raise FetchError("dns_failure") from exc
     if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
         raise FetchError("ssrf_blocked")
+    # Prefer IPv4 on hosts whose resolver advertises IPv6 without a working route.
+    # Validate every address above, including the addresses not selected for the connection.
+    addresses.sort(key=lambda address: ipaddress.ip_address(address).version)
     return parsed.hostname, port, addresses
 
 

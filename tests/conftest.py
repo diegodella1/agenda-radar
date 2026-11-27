@@ -13,6 +13,9 @@ def app(tmp_path):
         data_dir=tmp_path / "data",
         secrets_dir=tmp_path / "secrets",
         backup_dir=tmp_path / "backups",
+        demo_dir=tmp_path / "demo",
+        demo_corpus_dir=tmp_path / "demo-corpus",
+        default_language="es",
         cookie_secure=False,
     )
     application = create_app(settings)

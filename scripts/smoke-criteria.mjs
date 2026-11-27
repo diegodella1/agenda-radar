@@ -8,7 +8,10 @@ const page=await context.newPage();page.setDefaultTimeout(30000);page.setDefault
 const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});
 await mkdir('artifacts/criteria',{recursive:true});
 try{
- const login=await context.request.post(base+'/demo/api/v1/auth/login',{headers:{'X-Requested-With':'AgendaRadar'},data:{email:'demo',password:'demo'}});
+ const authenticate=()=>context.request.post(base+'/demo/api/v1/auth/login',{headers:{'X-Requested-With':'AgendaRadar'},data:{email:'demo',password:'demo'}});
+ let login=await authenticate();
+ const loginDeadline=Date.now()+300000;
+ while(login.status()===202 && Date.now()<loginDeadline){await new Promise(resolve=>setTimeout(resolve,2000));login=await authenticate();}
  assert.equal(login.status(),200);
  await page.goto(base+'/demo/admin/config',{waitUntil:'domcontentloaded'});
  await page.waitForFunction(()=>window.configEditor);console.log('Editor ready');

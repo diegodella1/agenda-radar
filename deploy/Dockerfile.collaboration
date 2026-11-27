@@ -1,0 +1,6 @@
+ARG RUNTIME_IMAGE=agenda-radar:copy-seo-20261126
+FROM ${RUNTIME_IMAGE}
+USER root
+RUN pip install --no-cache-dir slack-sdk==3.48.0
+COPY src /app/src
+USER radar

@@ -16,7 +16,7 @@ def test_public_pages_do_not_expose_editorial_data(app):
 
 def test_signed_in_root_keeps_editorial_dashboard(client):
     assert "Radar editorial" in client.get("/").text
-    assert "Tus fuentes." in client.get("/home").text
+    assert "Detectá brechas de cobertura." in client.get("/home").text
 
 
 def test_stylesheets_are_css_not_templates(app):
@@ -28,5 +28,6 @@ def test_stylesheets_are_css_not_templates(app):
             assert "{%" not in response.text and "{{" not in response.text
             assert "<html" not in response.text and "<div" not in response.text
             assert "@font-face" in response.text
-            assert "'Radar Sans',sans-serif" in response.text
+            assert "'Radar Sans','Radar Fallback',sans-serif" in response.text
+            assert "format('woff2')" in response.text
             assert "--paper:#f3f6fb" in response.text

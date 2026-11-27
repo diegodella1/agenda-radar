@@ -65,6 +65,8 @@ def execute_job(db, vault, settings, job):
             job.payload["query"],
             window=job.payload.get("window", "24h"),
             purpose=job.payload.get("purpose", "answer_telegram"),
+            language=job.payload.get("language", settings.default_language),
+            destination="external" if job.kind == "telegram_query" else "internal",
         )
     if job.kind == "test_prompt":
         with db.session() as session:
@@ -189,7 +191,10 @@ async def run(settings: Settings):
     last_score = 0.0
     try:
         while True:
-            job = await asyncio.to_thread(claim, db, owner)
+            from .collaboration_worker import COLLABORATION_JOBS
+            excluded = COLLABORATION_JOBS if settings.collaboration_enabled else tuple(
+                kind for kind in COLLABORATION_JOBS if kind not in ('query', 'telegram_query', 'enrich', 'test_prompt'))
+            job = await asyncio.to_thread(claim, db, owner, exclude_kinds=excluded)
             if job:
                 lease = asyncio.create_task(lease_loop(job.id))
                 try:

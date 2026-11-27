@@ -101,6 +101,11 @@ class Telegram:
                             )
                         )
                         audit(session, user.id, action, "event", event.id)
+                        from .collaboration_models import EditorialFollowup
+                        follow = session.get(EditorialFollowup, event.id) or EditorialFollowup(event_id=event.id)
+                        follow.status = 'following' if action == 'follow' else 'dismissed'
+                        follow.updated_at = time.time()
+                        session.add(follow)
                         response = "Decisión registrada."
                 elif body.startswith("/silenciar"):
                     argument = body.split(maxsplit=1)[1] if " " in body else "2h"

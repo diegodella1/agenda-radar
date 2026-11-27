@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import re
@@ -21,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
+from starlette.middleware.gzip import GZipMiddleware
 
 from .config import Settings
 from .db import Database
@@ -67,9 +69,14 @@ from .security import (
     pairing_code,
     verify_password,
 )
+from .seo import PUBLIC_PATHS, localized_url, sitemap
 
 ROOT = Path(__file__).parent
-ASSET_VERSION = digest("".join((ROOT / "static" / name).read_text() for name in ("app.js", "app.css", "public.css", "config-editor.js")))[:12]
+ASSET_VERSIONS = {
+    str(path.relative_to(ROOT / "static")): hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    for path in sorted((ROOT / "static").rglob("*")) if path.is_file()
+}
+ASSET_VERSION = digest("".join(ASSET_VERSIONS.values()))[:12]
 
 
 def row_dict(row, exclude=()):
@@ -128,22 +135,36 @@ class PromptInput(BaseModel):
 
 def create_app(settings: Settings | None = None):
     settings = settings or Settings()
-    db, vault = Database(settings.database_path), Vault(settings.secrets_dir)
+    db = Database(settings.database_path, durable=not settings.demo_mode)
+    vault = Vault(settings.secrets_dir)
     base_path = "/demo" if settings.demo_mode else ""
     session_cookie = "radar_demo_session" if settings.demo_mode else "radar_session"
     app = FastAPI(
         title="Agenda Radar", version="0.1.0", docs_url=None, redoc_url=None, openapi_url=None
     )
     app.state.db, app.state.settings, app.state.vault = db, settings, vault
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
     templates = Jinja2Templates(directory=ROOT / "templates")
-    templates.env.globals.update(base_path=base_path, demo=settings.demo_mode, demo_enabled=settings.demo_enabled, asset_version=ASSET_VERSION)
+    templates.env.globals.update(
+        base_path=base_path, demo=settings.demo_mode, demo_enabled=settings.demo_enabled,
+        asset_version=ASSET_VERSION,
+        asset_url=lambda name: f"{base_path}/static/{name}?v={ASSET_VERSIONS[name]}",
+    )
     templates.env.filters["date"] = lambda value: (
         datetime.fromtimestamp(value, ZoneInfo(settings.app_timezone)).strftime("%d/%m %H:%M")
         if value
         else "Sin registro"
     )
     templates.env.filters["pct"] = lambda value: f"{value:.1f}" if value is not None else "—"
+    from .i18n import language, request_language, translate
+
+    templates.env.globals["_"] = translate
+    templates.env.globals["demo_showcase"] = settings.demo_showcase
+    templates.env.filters["tr"] = translate
+    templates.context_processors.append(lambda request: {"language": language.get()})
+    original_date = templates.env.filters["date"]
+    templates.env.filters["date"] = lambda value: translate(original_date(value))
 
     def require(role="reader"):
         def dependency(request: Request):
@@ -172,7 +193,8 @@ def create_app(settings: Settings | None = None):
             return RedirectResponse(target, status_code=307)
         request.state.user, request.state.csrf = None, ""
         demo_dispatch = settings.demo_enabled and (request.url.path == "/demo" or request.url.path.startswith("/demo/"))
-        token = None if demo_dispatch else request.cookies.get(session_cookie)
+        public_asset = request.url.path.startswith('/static/')
+        token = None if demo_dispatch or public_asset else request.cookies.get(session_cookie)
         if settings.demo_mode and request.url.path == "/api/v1/auth/login":
             token = None
         if (
@@ -214,6 +236,9 @@ def create_app(settings: Settings | None = None):
             if not permitted:
                 return JSONResponse({"detail": "Esta función no está habilitada en la demo."}, 403)
         response = await call_next(request)
+        indexable = request.url.path in PUBLIC_PATHS or (request.url.path == "/" and not request.state.user)
+        if not indexable and not request.url.path.startswith("/static/"):
+            response.headers["X-Robots-Tag"] = "noindex, follow"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         if settings.cookie_secure and request.url.scheme == "https":
@@ -222,13 +247,45 @@ def create_app(settings: Settings | None = None):
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         )
-        if not request.url.path.startswith("/static"):
+        if request.url.path.startswith(("/static/", "/demo/static/")) and response.status_code < 400:
+            asset_name = request.url.path.split("/static/", 1)[1]
+            version = request.query_params.get("v")
+            response.headers["Cache-Control"] = (
+                "public, max-age=31536000, immutable"
+                if version and version == ASSET_VERSIONS.get(asset_name)
+                else "public, max-age=0, must-revalidate"
+            )
+        else:
             response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.middleware("http")
+    async def language_middleware(request, call_next):
+        selected = request_language(request, settings.default_language)
+        token = language.set(selected)
+        try:
+            response = await call_next(request)
+            if not request.url.path.startswith(("/static/", "/demo/static/")):
+                response.headers["Content-Language"] = selected
+                if request.query_params.get("lang") in {"en", "es"}:
+                    response.set_cookie("radar_lang", selected, max_age=31536000,
+                                        secure=settings.cookie_secure, samesite="lax")
+            return response
+        finally:
+            language.reset(token)
+
+    @app.exception_handler(HTTPException)
+    async def http_error(request, exc):
+        if exc.status_code == 401 and request.method == "GET" and request.url.path == "/collaboration":
+            from urllib.parse import urlencode
+            destination = request.url.path + ("?" + request.url.query if request.url.query else "")
+            return RedirectResponse("/login?" + urlencode({"next": destination}), status_code=303)
+        return JSONResponse({"detail": translate(exc.detail)}, status_code=exc.status_code,
+                            headers=exc.headers)
+
     @app.exception_handler(ValueError)
     async def bad_value(request, exc):
-        return JSONResponse({"detail": str(exc)}, status_code=422)
+        return JSONResponse({"detail": translate(str(exc))}, status_code=422)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
@@ -253,6 +310,9 @@ def create_app(settings: Settings | None = None):
                 revision = session.execute(text("SELECT version_num FROM alembic_version")).scalar()
                 pulse = session.get(State, "worker_heartbeat")
                 healthy = bool(revision and pulse and time.time() - pulse.value["at"] < 120)
+                if settings.collaboration_enabled:
+                    collaboration_pulse = session.get(State, 'collaboration_heartbeat')
+                    healthy = healthy and bool(collaboration_pulse and time.time() - collaboration_pulse.value['at'] < 120)
             return JSONResponse(
                 {"status": "ready" if healthy else "degraded"}, status_code=200 if healthy else 503
             )
@@ -455,6 +515,12 @@ def create_app(settings: Settings | None = None):
             if not session.get(Event, payload.event_id):
                 raise HTTPException(404, "Acontecimiento inexistente")
             session.add(Decision(**payload.model_dump(), user_id=user.id))
+            if payload.action in ("follow", "dismiss"):
+                from .collaboration_models import EditorialFollowup
+                follow = session.get(EditorialFollowup, payload.event_id) or EditorialFollowup(event_id=payload.event_id)
+                follow.status = "following" if payload.action == "follow" else "dismissed"
+                follow.updated_at = time.time()
+                session.add(follow)
             audit(
                 session,
                 user.id,
@@ -582,7 +648,7 @@ def create_app(settings: Settings | None = None):
             with db.session() as session:
                 if not session.get(Source, source_id):
                     raise HTTPException(404, "Fuente inexistente")
-            return demo_job({"mode": "simulated", "message": "Sin conexión externa. Usá Simular novedades para incorporar el lote de ejemplo."}, user.id)
+            return demo_job({"mode": "simulated", "message": "Sin conexión externa desde esta visita. Usá Cargar novedades para importar la última captura real."}, user.id)
         with db.session() as session:
             if not session.get(Source, source_id):
                 raise HTTPException(404, "Fuente inexistente")
@@ -754,7 +820,7 @@ def create_app(settings: Settings | None = None):
                 evidence = retrieve(session, payload.query, window=payload.window, now=settings.demo_epoch)
             return demo_job(fallback(evidence, "Respuesta de demostración, sin llamada a OpenAI"), user.id)
         return {
-            "job_id": enqueue(db, "query", payload.model_dump(), secrets.token_hex(16), user.id)
+            "job_id": enqueue(db, "query", {**payload.model_dump(), "language": language.get()}, secrets.token_hex(16), user.id)
         }
 
     @app.get("/api/v1/jobs/{job_id}")
@@ -905,6 +971,9 @@ def create_app(settings: Settings | None = None):
         with db.session() as session:
             result = compare(session, window, now=settings.demo_epoch)
         lines = ["# Agenda Radar", f"Ventana: {window}", result["sample_caveat"], ""]
+        if settings.demo_mode:
+            lines.append("Horizonte Federal: cliente ficticio. Cobertura propia simulada; referencias reales. "
+                         "Sin historial suficiente hasta acumular observaciones reales.")
         for row in result["rows"]:
             lines += [
                 "## " + row["label"].replace("\n", " "),
@@ -922,6 +991,19 @@ def create_app(settings: Settings | None = None):
     def render(request, template, **context):
         if not request.state.user:
             return RedirectResponse(base_path + "/login", status_code=303)
+        if settings.demo_mode:
+            with db.session() as session:
+                scenario = session.get(State, "demo_scenario")
+                context["demo_scenario"] = scenario.value if scenario else {}
+                context["onboarding_ready"] = {
+                    "sources": bool(session.scalar(select(Source.id).where(
+                        Source.enabled.is_(True), Source.scope == "reference").limit(1))),
+                    "criteria": bool(active_config(session)[0]),
+                    "news": bool(context["demo_scenario"].get("ready") and session.scalar(
+                        select(Document.id).where(
+                            ~Document.title.startswith("[Cobertura simulada]")).limit(1))),
+                }
+            context["wall_now"] = time.time()
         return templates.TemplateResponse(
             request=request,
             name=template,
@@ -934,20 +1016,33 @@ def create_app(settings: Settings | None = None):
             },
         )
 
+    if not settings.demo_mode:
+        from .collaboration_api import install
+        install(app, db, vault, settings, require, render)
+
     def public_page(request, page="home"):
         pages = {
-            "home": ("Una agenda. Más perspectiva.", "Compará tu cobertura con medios de referencia, detectá brechas y decidí con evidencia."),
-            "about": ("Acerca de Agenda Radar", "Una herramienta para ampliar la mirada editorial sin delegar el criterio periodístico."),
-            "funcionalidades": ("Cómo funciona", "Fuentes, acontecimientos, agenda comparada y alertas en una misma mesa editorial."),
-            "casos-de-uso": ("Casos de uso", "Del pase de redacción al seguimiento de una noticia: decisiones editoriales con contexto."),
-            "roadmap": ("Alcance y próximos pasos", "Qué incluye el MVP de Agenda Radar y qué queda por validar o evaluar."),
+            "home": ("Monitoreo y colaboración para redacciones", "Compará coberturas, prepará briefings y seguí historias con agentes editoriales, Slack e IA opcional. Explorá la demo sin registro."),
+            "about": ("Tecnología al servicio del criterio editorial", "Conocé el enfoque de Agenda Radar: evidencia trazable, decisiones humanas, una instalación por redacción y elección del proveedor de IA."),
+            "funcionalidades": ("Agentes editoriales, Slack e IA empresarial", "Explorá comparación de cobertura, agentes de vigilancia y briefing, seguimiento con responsables y modelos de OpenAI, Claude o tu red interna."),
+            "casos-de-uso": ("Seis flujos de trabajo para redacciones", "Del briefing de la mañana al seguimiento en Slack y la IA empresarial: seis formas de trabajar con evidencia y decisiones en Agenda Radar."),
+            "roadmap": ("Agentes y colaboración para tu redacción", "Detectá historias, prepará briefings y coordiná el seguimiento en Slack. Conocé los agentes editoriales y elegí IA en la nube o en tu red empresarial."),
         }
         title, description = pages[page]
         return templates.TemplateResponse(
             request=request, name="public.html",
             context={"page": page, "title": title, "description": description,
-                     "public_url": settings.app_base_url.rstrip("/") + ("/home" if page == "home" else "/" + page)},
+                     "public_url": localized_url(settings.app_base_url, "/" + page, language.get()),
+                     "alternate_urls": {lang: localized_url(settings.app_base_url, "/" + page, lang) for lang in ("en", "es")}},
         )
+
+    @app.get("/robots.txt", response_class=PlainTextResponse)
+    def robots():
+        return "User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: " + settings.app_base_url.rstrip("/") + "/sitemap.xml\n"
+
+    @app.get("/sitemap.xml")
+    def public_sitemap():
+        return PlainTextResponse(sitemap(settings.app_base_url), media_type="application/xml")
 
     @app.get("/home", response_class=HTMLResponse)
     @app.get("/about", response_class=HTMLResponse)
@@ -1169,15 +1264,25 @@ def create_app(settings: Settings | None = None):
 
         @app.post("/api/v1/demo/reset")
         def demo_reset(user=Depends(require("media_admin"))):
+            from .demo_corpus import read_snapshot
             from .demo_data import seed
+            payload = read_snapshot(settings.demo_corpus_dir)
+            epoch = payload["captured_at"] if payload else time.time()
             with db.session() as session:
-                return seed(session, settings.demo_epoch, settings.app_base_url, reset=True)
+                result = seed(session, epoch, settings.app_base_url, reset=True, payload=payload)
+            settings.demo_epoch = epoch
+            return result
 
         @app.post("/api/v1/demo/news")
         def demo_news(user=Depends(require("media_admin"))):
-            from .demo_data import simulate_news
+            from .demo_corpus import read_snapshot
+            from .demo_data import load_news
+            payload = read_snapshot(settings.demo_corpus_dir)
             with db.session() as session:
-                return simulate_news(session, settings.demo_epoch, settings.app_base_url)
+                result = load_news(session, settings.demo_epoch, payload, settings.app_base_url)
+            if payload:
+                settings.demo_epoch = payload["captured_at"]
+            return result
 
         @app.get("/integrations", response_class=HTMLResponse)
         def demo_integrations(request: Request, user=Depends(require())):
@@ -1193,9 +1298,14 @@ def create_app(settings: Settings | None = None):
                 mention = session.get(Mention, document_id)
                 event_id = mention.event_id if mention else None
             return render(request, "demo_evidence.html", document=data, event_id=event_id,
-                          title="Evidencia ficticia")
+                          title="Evidencia de la demo")
 
     if settings.demo_enabled and not settings.demo_mode:
+        if settings.demo_showcase:
+            from .showcase import create_showcase
+
+            app.mount("/demo", create_showcase(templates))
+            return app
         from .demo import DemoManager
         manager = DemoManager(settings)
         app.state.demo_manager = manager

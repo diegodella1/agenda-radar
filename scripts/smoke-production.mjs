@@ -1,7 +1,7 @@
 import {readFile,mkdir} from 'node:fs/promises';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const credentials=JSON.parse(await readFile('secrets/initial-admin.json','utf8'));
-const base=process.env.SMOKE_BASE_URL || 'https://mp.diegodella.ar';
+const base=process.env.SMOKE_BASE_URL || 'https://aradar.diegodella.ar';
 const browser=await chromium.launch({headless:true,executablePath:'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
 try {
  const page=await browser.newPage({viewport:{width:1440,height:1000}});

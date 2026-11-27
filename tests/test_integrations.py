@@ -107,7 +107,7 @@ def test_openai_invalid_citations_fall_back_without_inventing_links(app, monkeyp
 
     with app.state.db.session() as session:
         source = Source(
-            name="Test", url="https://medio.test/rss", group_name="Test", legal_basis="Fixture"
+            name="Test", url="https://medio.test/rss", group_name="Test", legal_basis="Fixture", options={"data_policy": "external"}
         )
         session.add(source)
         session.flush()
@@ -156,7 +156,7 @@ def test_extraction_keeps_only_literal_evidence_and_does_not_merge(app, monkeypa
 
     with app.state.db.session() as session:
         source = Source(
-            name="Test", url="https://medio.test/rss", group_name="Test", legal_basis="Fixture"
+            name="Test", url="https://medio.test/rss", group_name="Test", legal_basis="Fixture", options={"data_policy": "external"}
         )
         session.add(source)
         session.flush()

@@ -1,6 +1,7 @@
 .venv
 .git
 data
+demo-corpus
 secrets
 artifacts
 .env

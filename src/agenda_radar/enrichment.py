@@ -26,15 +26,62 @@ class Extraction(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
+def enrich_with_profile(db, vault, profile, document, config, apply):
+    from .ai import INSTRUCTIONS, generate
+    from .data_policy import permitted_evidence
+    if not config.ai_enabled or not config.extraction_enabled or not profile.enabled:
+        return {"status": "disabled"}
+    with db.session() as session:
+        mention = session.get(Mention, document.id)
+        if mention and mention.human_verified:
+            return {"status": "human_verified"}
+        evidence = permitted_evidence(session, [{'id': document.id, 'title': document.title,
+            'excerpt': document.excerpt}], profile.network)
+        candidates = permitted_evidence(session, retrieve(session, document.title, window="72h"), profile.network)
+    if not evidence:
+        return {"status": "policy_restricted"}
+    result, run_id = generate(db, vault, profile.id, 'extract_event', INSTRUCTIONS +
+        'Extract entity names with literal evidence spans. Only link documents describing the same event. If unsure use null.',
+        {'document': evidence[0], 'candidates': candidates, 'topics': list(config.topic_keywords)}, Extraction)
+    if result.document_id != document.id:
+        return {"status": "invalid_output"}
+    if not apply:
+        return {"status": "tested", "result": result.model_dump(), "ai_run_id": run_id}
+    with db.session() as session:
+        current = session.get(Document, document.id)
+        mention = session.get(Mention, document.id)
+        if not current or current.content_hash != document.content_hash or (mention and mention.human_verified):
+            return {"status": "superseded"}
+        corpus = current.title + ' ' + current.excerpt
+        current.entities = [entity.model_dump() for entity in result.entities if entity.name and entity.name in entity.evidence_span and entity.evidence_span in corpus]
+        if result.topic in config.topic_keywords:
+            current.topic = result.topic
+        if result.related_document_id != current.id and result.related_document_id in {item['id'] for item in candidates}:
+            related = session.get(Mention, result.related_document_id)
+            if related and mention and related.event_id != mention.event_id:
+                session.merge(State(key=f'event_review:{current.id}', value={
+                    'event_id': mention.event_id, 'candidate_event_id': related.event_id,
+                    'reason': result.reason, 'confidence': result.confidence, 'at': time.time()}))
+        audit(session, None, 'ai_extract', 'document', current.id, after={'ai_run_id': run_id})
+    return {"status": "completed", "ai_run_id": run_id}
+
+
 def enrich_document(db, vault, document_id, expected_hash, prompt_id=None, apply=True):
     with db.session() as session:
         _, config = active_config(session)
         document = session.get(Document, document_id)
         if not document or document.content_hash != expected_hash:
             return {"status": "superseded"}
+        from .ai import selected_profile
+        profile = selected_profile(session, "extract_event")
+        if profile:
+            return enrich_with_profile(db, vault, profile, document, config, apply)
         key = vault.get(session, "openai")
         if not config.ai_enabled or not config.extraction_enabled or not key:
             return {"status": "disabled"}
+        from .data_policy import permitted_evidence
+        if not permitted_evidence(session, [{'id': document.id}], 'external'):
+            return {"status": "policy_restricted"}
         mention = session.get(Mention, document_id)
         if mention and mention.human_verified:
             return {"status": "human_verified"}
@@ -52,6 +99,7 @@ def enrich_document(db, vault, document_id, expected_hash, prompt_id=None, apply
             for item in retrieve(session, document.title, window="72h")
             if item["id"] != document_id
         ][:6]
+        candidates = permitted_evidence(session, candidates, 'external')
         original = {"id": document.id, "title": document.title, "excerpt": document.excerpt}
         model = config.extraction_model or config.ai_model
         if prompt and prompt.model != model:

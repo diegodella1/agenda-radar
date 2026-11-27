@@ -27,6 +27,7 @@ from .schemas import DocumentInput
 STOPWORDS = set(
     "de la el en los las del un una por para con que al se y a o su sus es como más ante tras sobre".split()
 )
+STOPWORDS.update('the and for with from this that these those into about which their have has was were are not but'.split())
 
 
 def tokens(value: str) -> set[str]:
@@ -138,25 +139,36 @@ def cluster_document(session, document: Document):
     best = 0.0
     if words:
         query = " OR ".join('"' + word.replace('"', "") + '"' for word in sorted(words)[:15])
-        candidates = session.execute(
+        candidate_ids = list(session.execute(
             text("""SELECT d.id FROM document_fts f
             JOIN documents d ON d.id=f.rowid WHERE document_fts MATCH :query
             AND d.id != :id AND d.observed_at >= :since ORDER BY rank LIMIT 30"""),
             {"query": query, "id": document.id, "since": document.observed_at - 72 * 3600},
-        ).scalars()
-        for candidate_id in candidates:
-            candidate = session.get(Document, candidate_id)
-            candidate_mention = session.get(Mention, candidate_id)
-            if not candidate_mention:
+        ).scalars())
+        candidates = {
+            candidate.id: (candidate, event)
+            for candidate, event in session.execute(
+                select(Document, Event)
+                .join(Mention, Mention.document_id == Document.id)
+                .join(Event, Event.id == Mention.event_id)
+                .where(Document.id.in_(candidate_ids))
+            )
+        } if candidate_ids else {}
+        # Keep FTS rank order: equal similarities must retain the same first match.
+        for candidate_id in candidate_ids:
+            if candidate_id not in candidates:
                 continue
+            candidate, event = candidates[candidate_id]
             other_words = tokens(candidate.title)
             overlap = len(words & other_words) / max(1, len(words | other_words))
+            # SequenceMatcher cannot exceed 1, so these candidates cannot qualify.
+            if event.status == "merged" or 0.75 * overlap + 0.25 < max(0.66, best):
+                continue
             similarity = (
                 0.75 * overlap
                 + 0.25
                 * SequenceMatcher(None, document.title.lower(), candidate.title.lower()).ratio()
             )
-            event = session.get(Event, candidate_mention.event_id)
             if event.status != "merged" and similarity > best and similarity >= 0.66:
                 best, match = similarity, event
     if match is None:
@@ -197,12 +209,13 @@ def store_document(session, source: Source, item: DocumentInput, now=None) -> Do
     )
     content_hash = hashlib.sha256((item.title + "\n" + item.excerpt).encode()).hexdigest()
     _, config = active_config(session)
+    document_tokens = tokens(item.title + " " + item.excerpt)
     topic = next(
         (
             topic
             for topic, keywords in config.topic_keywords.items()
             if any(
-                tokens(keyword) <= tokens(item.title + " " + item.excerpt)
+                tokens(keyword) <= document_tokens
                 for keyword in keywords
                 if tokens(keyword)
             )
@@ -325,6 +338,8 @@ def poll_source(db, source_id: int, vault=None):
                         )
                     )
                 else:
+                    if source.options.get("catalog_version"):
+                        item = item.model_copy(update={"excerpt": item.excerpt[:500]})
                     document_ids.append(store_document(session, source, item).id)
             source.last_success = time.time()
             source.status, source.error_code = "healthy", None

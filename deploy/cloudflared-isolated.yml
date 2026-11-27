@@ -1,9 +1,9 @@
-tunnel: 1959f7d2-7ca8-4a84-825f-07e52301520d
+tunnel: 6c2c5376-c23d-40a6-b2f5-db510d7b3117
 credentials-file: /etc/cloudflared/credentials.json
 protocol: http2
 metrics: 127.0.0.1:20249
 ingress:
-  - hostname: mp.diegodella.ar
+  - hostname: aradar.diegodella.ar
     service: http://127.0.0.1:8765
     originRequest:
       keepAliveTimeout: 2s

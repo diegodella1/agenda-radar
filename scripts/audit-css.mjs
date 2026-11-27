@@ -57,7 +57,10 @@ try{
  for(const path of ['/home','/about','/funcionalidades','/casos-de-uso','/roadmap','/login','/demo/login'])await inspect(path);
  if(local)await inspect('/setup');
  const loginPath=local?'/api/v1/auth/login':'/demo/api/v1/auth/login';
- const result=await context.request.post(base+loginPath,{headers:{'X-Requested-With':'AgendaRadar'},data:local?{email:'css-audit@example.test',password:'local-css-audit-only-2026'}:{email:'demo',password:'demo'},timeout:20000});
+ const authenticate=()=>context.request.post(base+loginPath,{headers:{'X-Requested-With':'AgendaRadar'},data:local?{email:'css-audit@example.test',password:'local-css-audit-only-2026'}:{email:'demo',password:'demo'},timeout:20000});
+ let result=await authenticate();
+ const loginDeadline=Date.now()+300000;
+ while(result.status()===202 && Date.now()<loginDeadline){await new Promise(resolve=>setTimeout(resolve,2000));result=await authenticate();}
  assert.equal(result.status(),200,'Audit login');csrf=(await result.json()).csrf;demo=!local;
  const prefix=local?'':'/demo';
  const routes=['/','/compare','/events','/events/1','/trends','/alerts','/history','/assistant','/admin/sources','/admin/config'];

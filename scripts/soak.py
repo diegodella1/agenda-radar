@@ -9,7 +9,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument("--hours", type=float, default=24)
 parser.add_argument("--interval", type=float, default=60)
-parser.add_argument("--url", default="https://mp.diegodella.ar/health/ready")
+parser.add_argument("--url", default="https://aradar.diegodella.ar/health/ready")
 parser.add_argument("--output", default="artifacts/soak")
 args = parser.parse_args()
 if args.hours <= 0 or args.interval < 1:

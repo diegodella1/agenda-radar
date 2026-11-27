@@ -1,6 +1,6 @@
 name: agenda-radar
 x-runtime: &runtime
-  image: agenda-radar:criteria-e84af9b52084
+  image: agenda-radar:newsroom-page-20261126
   user: "1000:1000"
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]
@@ -16,7 +16,7 @@ x-runtime: &runtime
     DATA_DIR: /app/data
     SECRETS_DIR: /app/secrets
     BACKUP_DIR: /app/backups
-    APP_BASE_URL: https://mp.diegodella.ar
+    APP_BASE_URL: https://aradar.diegodella.ar
     COOKIE_SECURE: "true"
     APP_BIND: 127.0.0.1
     APP_PORT: 8765
@@ -24,9 +24,14 @@ x-runtime: &runtime
     DEMO_DIR: /app/data/demo
     DEMO_MAX_SESSIONS: 10
     DEMO_SESSION_SECONDS: 7200
+    DEMO_SHOWCASE: "true"
+    DEFAULT_LANGUAGE: en
+    COLLABORATION_ENABLED: "true"
+    AI_INTERNAL_HOSTS: ${AI_INTERNAL_HOSTS:-}
 services:
   web:
     <<: *runtime
+    image: agenda-radar:newsroom-page-20261126
     network_mode: host
     command: ["python", "-m", "agenda_radar.cli", "web"]
     mem_limit: 512m
@@ -41,6 +46,16 @@ services:
     command: ["python", "-m", "agenda_radar.cli", "worker"]
     mem_limit: 768m
     cpus: 0.75
+  collaboration:
+    <<: *runtime
+    command: ["python", "-m", "agenda_radar.cli", "collaboration-worker"]
+    volumes:
+      - ./data:/app/data
+      - ./secrets/master.key:/app/secrets/master.key:ro
+      - ./data/backups:/app/backups
+      - ./secrets/ai-certificates:/app/certificates:ro
+    mem_limit: 384m
+    cpus: 0.5
   tunnel:
     image: cloudflare/cloudflared:2026.10.0
     user: "1000:1000"
@@ -49,7 +64,7 @@ services:
     command: ["--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "tunnel", "run"]
     volumes:
       - ./deploy/cloudflared-isolated.yml:/etc/cloudflared/config.yml:ro
-      - ./secrets/cloudflared.json:/etc/cloudflared/credentials.json:ro
+      - ./secrets/cloudflared-aradar.json:/etc/cloudflared/credentials.json:ro
     mem_limit: 192m
     cpus: 0.25
     security_opt: ["no-new-privileges:true"]
@@ -59,7 +74,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
   soak:
     profiles: ["qa"]
-    image: agenda-radar:pilot-762a80ce0e77
+    image: agenda-radar:newsroom-page-20261126
     user: "1000:1000"
     command: ["python", "/soak.py", "--hours", "24", "--output", "/results"]
     restart: "no"

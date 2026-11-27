@@ -1,60 +1,57 @@
-# Demo pública editable
+# Demo interactiva con contenido ficticio
 
-Acceso: https://mp.diegodella.ar/demo/login — usuario `demo`, contraseña `demo`.
-También se puede usar esa combinación desde el login principal. No es una cuenta de producción.
+Acceso: **https://aradar.diegodella.ar/demo/**. No requiere usuario, contraseña ni claves.
+`/demo/login` también abre directamente el escenario.
 
-## Datos y recorrido
+## Experiencia
 
-Escenario `argentina-v1`: 7 medios ficticios (1 propio y 6 referencias independientes),
-18 acontecimientos y 103 publicaciones distribuidas entre cinco ventanas. Incluye 5 alertas
-históricas explícitamente ficticias, 3 tendencias, decisiones y evidencia interna navegable.
-El reloj editorial se fija al inicio de cada visita. El motor real calcula comparaciones;
-la consulta local no llama a OpenAI. Los antecedentes son ilustrativos, no mediciones reales.
+Horizon Daily y los cuatro medios de referencia son ficticios. Seis historias ilustran brechas
+de cobertura, agenda propia, interés de búsqueda y decisiones editoriales. Noticias, extractos,
+porcentajes y tendencias son ejemplos identificados como tales. No hay enlaces a artículos reales.
 
-Comparar agendas → abrir Transporte urbano → revisar evidencia → registrar decisión →
-Simular novedades → revisar alertas → consultar «transporte» → reiniciar el escenario.
-El lote agrega 10 publicaciones una sola vez y evalúa las reglas sobre esos datos.
-Cambiar criterios o agrupamientos puede modificar el resultado; reiniciar restaura el fixture.
+La demo permite comparar períodos, filtrar historias, revisar evidencia ficticia, registrar
+seguir/revisar/descartar con un motivo, marcar alertas revisadas, activar referencias, modificar
+pesos por tema, previsualizar y publicar prioridades, restaurar pesos y simular una nueva señal.
+El asistente usa respuestas locales guionadas y reconoce preguntas fuera del escenario.
+Los cálculos son ilustrativos; no sustituyen el motor editorial del espacio real.
 
-## Aislamiento y límites
+Cada sección muestra una guía breve al visitarla por primera vez: resumen, comparación,
+acontecimientos, evidencia/decisión, tendencias, alertas, historial, asistente, fuentes, criterios
+e integraciones. Se puede omitir con botón o Escape y repetir desde «Guía de esta función».
+Las guías no escriben decisiones. Reiniciar la demo limpia cambios, conservando guías ya vistas.
 
-Aplicación montada en `/demo` con una base SQLite independiente por visita y directorio
-aleatorio `data/demo/visit-<hash>`. La plantilla se genera con código versionado; no se copia
-la base real. Cookies propias limitadas a `/demo`; todas las mutaciones usan CSRF.
-No hay acceso a usuarios, secretos, backups, operaciones, contraseña ni vinculación Telegram.
-La lista de rutas permitidas se aplica en backend. Las pruebas de fuentes son simuladas.
-Importaciones masivas/manuales y carga de archivos no están habilitadas en la demo.
+## Idiomas
 
-No se inicia el worker normal ni se usan clientes externos. La configuración global de
-proveedores está bloqueada. Los cambios de fuentes/criterios, exportaciones y decisiones
-pertenecen únicamente a la base de la visita.
+Inglés por defecto, español seleccionable. `radar_lang` conserva la preferencia durante un año
+para el sitio público, acceso, cuenta principal y demo. `?lang=en` y `?lang=es` permiten enlaces
+directos. Las fuentes y los textos editoriales aportados por el usuario conservan su idioma original.
 
-Duración: 2 horas reales, máximo 10 sesiones, 30 fuentes por visita, 250 mutaciones antes
-de pedir reinicio y 20 solicitudes válidas de login por minuto en el conjunto de la demo.
-Limpieza cada 10 minutos y al atender solicitudes; logout elimina la visita. Al reiniciar
-el servidor se eliminan las visitas anteriores y se requiere ingresar nuevamente.
-Una única instancia web administra las visitas; no habilitar múltiples workers Uvicorn
-sin implementar primero un registro de sesiones compartido.
+El catálogo de interfaz compartido está en `static/translations.json`. Después de editarlo,
+ejecutar `python3 scripts/build-i18n.py` para actualizar el bundle del navegador.
+La demo tiene textos pareados en `showcase.js` y `showcase-data.js`.
 
-## Operación y rollback
+## Rendimiento y aislamiento
 
-`DEMO_ENABLED` es false por defecto en el código y true en el Compose de producción.
-`DEMO_DIR`, `DEMO_MAX_SESSIONS` y `DEMO_SESSION_SECONDS` controlan almacenamiento y capacidad.
-Para desactivar: `DEMO_ENABLED=false docker compose -f compose.production.yaml up -d web`.
-No requiere migración de la base de producción. Los datos temporales están ignorados por Git
-y no forman parte del backup SQLite del medio real. No configurar el worker sobre DEMO_DIR.
+`DEMO_ENABLED=true` y `DEMO_SHOWCASE=true` montan una página ligera y módulos estáticos.
+No se crea una base de datos por visitante, no se importa un corpus, no se inicia un preloader,
+no se llama a APIs y no se consulta OpenAI, Google, redes ni sitios de noticias.
 
-## Verificación
+Las interacciones y guías vistas se conservan en `localStorage` de ese navegador, separados de
+la cuenta principal. Con almacenamiento bloqueado, la sesión sigue funcionando en memoria.
+No se solicitan credenciales. «Reiniciar demo» elimina las modificaciones del escenario.
 
-`pytest tests/test_demo.py`: aislamiento, producción intacta, cinco ventanas, evidencia,
-novedades idempotentes, reset, permisos, ausencia de tráfico externo/secrets, CSRF, capacidad,
-vencimiento, limpieza y configuración. `scripts/smoke-demo.mjs` recorre la interfaz con dos
-navegadores y tres anchos; usa `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH` y `SMOKE_BASE_URL`.
+El despliegue ya no incluye `demo-collector` ni monta `demo-corpus` en web/worker. Los archivos
+históricos del recolector se conservan localmente y no se usan en la nueva demo.
+El código anterior basado en snapshots sigue disponible con `DEMO_SHOWCASE=false` para
+compatibilidad y pruebas; no es el modo publicado.
 
-### Guía visual editorial
-El resumen muestra seis prioridades y permite desplegar el resto. Incluye ritmo de
-publicaciones en intervalos comparables, cobertura propia/referencias, grupos y confianza.
-Las primeras seis historias tienen una publicación previa para contrastar el ritmo actual.
-Las novedades muestran participación de referencia antes/después y enlaces a dos
-acontecimientos afectados. Todos estos datos siguen siendo ficticios.
-Ver [criterio y validación visual](VISUAL_EDITORIAL_PLAN.md).
+## Validación
+
+- `tests/test_showcase.py`: demo sin migraciones ni lecturas de corpus; idiomas y persistencia.
+- `scripts/smoke-showcase.mjs`: ambos idiomas, diez secciones, 1440/390/320 px, guías,
+  decisiones, pesos, fuentes, señal simulada, asistente, reinicio, cero APIs y tráfico externo.
+- `scripts/smoke-i18n.mjs`: 19 páginas públicas y administrativas, ambos idiomas, escritorio/móvil.
+- `scripts/serve-showcase.py`: servidor local aislado con cuenta de prueba y datos temporales.
+
+Las evidencias locales se guardan en `artifacts/showcase/`, `artifacts/i18n/` y
+`artifacts/deploy-20261126/`. La validación publicada usa carpetas separadas.

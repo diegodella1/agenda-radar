@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 
 class Database:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, durable: bool = True):
         self.path = path.resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.engine = create_engine(f"sqlite:///{self.path}", connect_args={"timeout": 5})
@@ -20,7 +20,7 @@ class Database:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA busy_timeout=5000")
-            connection.execute("PRAGMA synchronous=FULL")
+            connection.execute("PRAGMA synchronous=FULL" if durable else "PRAGMA synchronous=NORMAL")
             os.chmod(self.path, 0o600)
 
     @contextmanager

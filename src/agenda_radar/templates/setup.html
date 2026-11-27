@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="es-AR"><head><meta charset="utf-8"><meta name="app-base" content="{{ base_path }}"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Configurar · Agenda Radar</title><link rel="stylesheet" href="{{ base_path }}/static/app.css?v={{ asset_version }}"><script src="{{ base_path }}/static/app.js?v={{ asset_version }}" defer></script></head>
-<body class="login"><main><p class="eyebrow">◉ AGENDA RADAR</p><h1>Tu mesa editorial,<br>lista para empezar.</h1><p>Creá la cuenta administradora. Necesitás el código de instalación generado en el servidor.</p>
+<html lang="{{ language }}"><head><script src="{{ asset_url('i18n.js') }}" defer></script><meta charset="utf-8"><meta name="app-base" content="{{ base_path }}"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ _("Configurar · Agenda Radar") }}</title><link rel="stylesheet" href="{{ asset_url('app.css') }}"><script src="{{ asset_url('app.js') }}" defer></script><meta name="feature-jobs" content="{{ asset_url('jobs.js') }}"></head>
+<body class="login"><main>{% include 'language.html' %}<p class="eyebrow">◉ AGENDA RADAR</p><h1>{{ _("Tu mesa editorial,") }}<br>{{ _("lista para empezar.") }}</h1><p>{{ _("Creá la cuenta administradora. Necesitás el código de instalación generado en el servidor.") }}</p>
 <form data-endpoint="{{ base_path }}/api/v1/auth/setup" data-setup>
-<label>Código de instalación<input name="code" type="password" autocomplete="off" required minlength="20" maxlength="100"></label>
-<label>Correo<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
-<label>Contraseña<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
-<button>Crear administrador →</button></form><div id="notice" role="status" hidden></div>
-<p class="muted">El código vence en 24 horas y solo permite crear la primera cuenta. Después podrás cargar fuentes, invitar al equipo y configurar integraciones.</p><a href="{{ base_path }}/login">Ya tengo cuenta</a></main></body></html>
+<label>{{ _("Código de instalación") }}<input name="code" type="password" autocomplete="off" required minlength="20" maxlength="100"></label>
+<label>{{ _("Correo") }}<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+<label>{{ _("Contraseña") }}<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+<button>{{ _("Crear administrador →") }}</button></form><div id="notice" role="status" hidden></div>
+<p class="muted">{{ _("El código vence en 24 horas y solo permite crear la primera cuenta. Después podrás cargar fuentes, invitar al equipo y configurar integraciones.") }}</p><a href="{{ base_path }}/login">{{ _("Ya tengo cuenta") }}</a></main></body></html>

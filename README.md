@@ -1,16 +1,23 @@
 # Agenda Radar
 
+## Agents, Slack and enterprise AI
+
+The workspace includes **Agents & collaboration**: previewable vigilance, daily briefing and
+follow-up agents, human decisions and ownership, Slack Socket Mode, and AI profiles for OpenAI,
+Claude or an internal Ollama/vLLM-compatible server. Connections start disabled.
+See [setup, data policies and pilot validation](docs/COLLABORATION.md).
+
 Aplicación local para observar fuentes, agrupar acontecimientos, comparar cobertura propia y
 referencias, registrar decisiones y consultar evidencia. Un medio por instalación.
 
-**Acceso:** https://mp.diegodella.ar · administrador `diego@diegodella.ar`.
+**Acceso:** https://aradar.diegodella.ar · administrador `diego@diegodella.ar`.
 
 [Guía vigente de acceso y operación](docs/CONFIGURAR_Y_PROBAR.md). Contraseña inicial en
 `secrets/initial-admin.json` (archivo privado local); cambiar desde Mi cuenta.
 
 **Estado:** desplegado para configuración y piloto. Consultar [STATUS.md](STATUS.md) para distinguir
 pruebas verificadas, limitaciones de implementación y validaciones externas pendientes.
-Plan aprobado: [12_PLAN_MVP.md](../12_PLAN_MVP.md). No hay fuentes ni claves de proveedores precargadas; se cargan en Administración.
+Plan aprobado: [12_PLAN_MVP.md](../12_PLAN_MVP.md). La instalación del medio real no precarga fuentes ni claves; la demo usa un escenario ficticio local, sin recolector ni claves. Inglés por defecto y español seleccionable en toda la interfaz.
 
 ## Inicio en un entorno nuevo de desarrollo
 
@@ -138,4 +145,8 @@ Portada `/home`, acerca de `/about`, producto `/funcionalidades`, casos `/casos-
 
 ## Demo pública
 
-[Probar demo](https://mp.diegodella.ar/demo/login): usuario `demo`, contraseña `demo`. Escenario ficticio editable y aislado por visitante. Ver [operación y límites](docs/DEMO.md) y [plan aprobado](docs/DEMO_PLAN.md).
+[Probar demo](https://aradar.diegodella.ar/demo/login): usuario `demo`, contraseña `demo`. Cliente ficticio con noticias, tendencias y perfiles reales; actualización periódica y cambios aislados por visitante. Ver [operación y límites](docs/DEMO.md) y [plan aprobado](docs/DEMO_PLAN.md).
+
+## Demo pública
+
+[Explorar la demo](https://aradar.diegodella.ar/demo/) sin registro: contenido ficticio, acciones locales y guías por función. [Operación de la demo](docs/DEMO.md).

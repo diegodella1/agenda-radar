@@ -6,6 +6,23 @@ from .network import FetchError
 from .schemas import DocumentInput
 
 
+def resolve_user(username: str, token: str):
+    import re
+
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,15}", username):
+        raise FetchError("invalid_x_username")
+    with httpx.Client(timeout=20, follow_redirects=False) as client:
+        response = client.get(f"https://api.x.com/2/users/by/username/{username}",
+                              headers={"Authorization": f"Bearer {token}"})
+    if response.status_code != 200:
+        raise FetchError({401: "no_credentials", 403: "not_entitled", 429: "quota_exhausted"}
+                         .get(response.status_code, "x_provider_error"))
+    identifier = str(response.json().get("data", {}).get("id", ""))
+    if not identifier.isdigit():
+        raise FetchError("x_numeric_id_required")
+    return identifier
+
+
 def poll_x(source, token: str | None):
     if not token:
         raise FetchError("no_credentials")
