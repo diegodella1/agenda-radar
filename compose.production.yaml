@@ -1,6 +1,6 @@
 name: agenda-radar
 x-runtime: &runtime
-  image: agenda-radar:newsroom-page-20261126
+  image: agenda-radar:newsroom-ux-20261127
   user: "1000:1000"
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]
@@ -27,7 +27,7 @@ x-runtime: &runtime
 services:
   web:
     <<: *runtime
-    image: agenda-radar:newsroom-page-20261126
+    image: agenda-radar:newsroom-ux-20261127
     network_mode: host
     command: ["python", "-m", "agenda_radar.cli", "web"]
     mem_limit: 512m
@@ -70,7 +70,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
   soak:
     profiles: ["qa"]
-    image: agenda-radar:newsroom-page-20261126
+    image: agenda-radar:newsroom-ux-20261127
     user: "1000:1000"
     command: ["python", "/soak.py", "--hours", "24", "--output", "/results"]
     restart: "no"

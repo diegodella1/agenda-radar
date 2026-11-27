@@ -1,13 +1,13 @@
 {
-  "image": "agenda-radar:criteria-e84af9b52084",
-  "previous_image": "agenda-radar:cssfix-b5421e4389e6",
-  "source_sha256": "e84af9b520840aa50decc2d5b05a84afe69aba25279c4a428e677706828993a2",
-  "source_files": 52,
-  "base_image": "agenda-radar:0.1.0",
-  "image_id": "sha256:e2c04b6c75e2f0f239b074582b147e4f368047db68bb96452e02bf1bb5761b44",
-  "local_tests": 49,
-  "public_url": "https://mp.diegodella.ar",
+  "image": "agenda-radar:newsroom-ux-20261127",
+  "previous_image": "agenda-radar:newsroom-page-20261126",
+  "source_sha256": "b16c0d2c9ef293a7bf771817d168df07b3b15ba78601ce08af278d0895f3e707",
+  "source_files": 78,
+  "base_image": "agenda-radar:newsroom-page-20261126",
+  "image_id": "sha256:bda5b44537b46f3f1cf920cdf867316bc37a057343e51a341328387690847490",
+  "local_tests": 89,
+  "public_url": "https://aradar.diegodella.ar",
   "https_redirect": true,
-  "demo_url": "https://mp.diegodella.ar/demo/login",
+  "demo_url": "https://aradar.diegodella.ar/demo/",
   "source_scope": "src/agenda_radar excluding Python caches"
 }
